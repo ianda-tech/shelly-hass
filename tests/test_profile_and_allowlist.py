@@ -5,27 +5,27 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from custom_components.shelly_fleet.allowlist import parse_allowlist_csv, resolve_config_path
-from custom_components.shelly_fleet.ble import (
+from custom_components.shelly_bulk.allowlist import parse_allowlist_csv, resolve_config_path
+from custom_components.shelly_bulk.ble import (
     auth_enabled,
     parse_shelly_manufacturer_data,
     rpc_over_ble_enabled,
 )
-from custom_components.shelly_fleet.const import VERSION
-from custom_components.shelly_fleet.models import AllowDevice, ChannelSettings
-from custom_components.shelly_fleet.profile import (
+from custom_components.shelly_bulk.const import VERSION
+from custom_components.shelly_bulk.models import AllowDevice, ChannelSettings
+from custom_components.shelly_bulk.profile import (
     build_set_auth,
     plan_config_calls,
     security_from_entry,
 )
-from custom_components.shelly_fleet.redact import SecretFilter, redact
-from custom_components.shelly_fleet.util import normalize_mac
+from custom_components.shelly_bulk.redact import SecretFilter, redact
+from custom_components.shelly_bulk.util import normalize_mac
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_manifest_version_matches_constant() -> None:
-    manifest = (ROOT / "custom_components" / "shelly_fleet" / "manifest.json").read_text()
+    manifest = (ROOT / "custom_components" / "shelly_bulk" / "manifest.json").read_text()
     assert f'"version": "{VERSION}"' in manifest
 
 
@@ -74,9 +74,9 @@ def test_allowlist_csv_and_path_guard(tmp_path: Path) -> None:
     assert device is not None
     assert device.name == "Example light"
     assert device.by_channel[0].input_mode == "detached"
-    inside = tmp_path / "shelly_fleet"
+    inside = tmp_path / "shelly_bulk"
     inside.mkdir()
-    target = resolve_config_path(str(tmp_path), "shelly_fleet/devices.csv")
+    target = resolve_config_path(str(tmp_path), "shelly_bulk/devices.csv")
     assert target.parent == inside.resolve()
     try:
         resolve_config_path(str(tmp_path), "../secret.csv")
@@ -126,7 +126,7 @@ def test_set_auth_does_not_echo_password() -> None:
 
 
 def test_secret_filter_masks_logs(caplog: logging.LogCaptureFixture) -> None:
-    logger = logging.getLogger("custom_components.shelly_fleet.test")
+    logger = logging.getLogger("custom_components.shelly_bulk.test")
     logger.addFilter(SecretFilter(lambda: ["example-fleet-pass"]))
     logger.setLevel(logging.INFO)
     with caplog.at_level(logging.INFO):

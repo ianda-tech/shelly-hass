@@ -1,13 +1,13 @@
-"""Constants for the Shelly Fleet integration."""
+"""Constants for the Shelly Bulk integration."""
 
 from __future__ import annotations
 
 from typing import Final
 
-DOMAIN: Final = "shelly_fleet"
+DOMAIN: Final = "shelly_bulk"
 SHELLY_DOMAIN: Final = "shelly"
 MANUFACTURER: Final = "Innovate and Automate"
-VERSION: Final = "0.1.0"
+VERSION: Final = "0.1.1"
 
 # Home Assistant's Shelly flow uses these step ids (core dev, November 2026).
 STEP_BLUETOOTH_CONFIRM: Final = "bluetooth_confirm"

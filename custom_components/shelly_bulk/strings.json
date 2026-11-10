@@ -8,11 +8,11 @@
           "site_name": "Site name",
           "wifi_ssid": "Wi-Fi SSID",
           "wifi_password": "Wi-Fi password",
-          "fleet_password": "Fleet device password",
+          "fleet_password": "Device password",
           "timezone": "Timezone"
         },
         "data_description": {
-          "site_name": "A label for this fleet entry, shown in Home Assistant.",
+          "site_name": "A label for this Shelly Bulk entry, shown in Home Assistant.",
           "wifi_ssid": "2.4 GHz network. WPA3-only and 5 GHz-only networks will not join.",
           "wifi_password": "Stored on this config entry. It is not written to logs or diagnostics.",
           "fleet_password": "Optional. One admin password applied to each adopted device with Shelly.SetAuth. Leave blank to leave authentication off.",
@@ -47,14 +47,14 @@
     },
     "abort": {
       "already_configured": "This site name is already configured.",
-      "not_loaded": "Shelly Fleet is not loaded yet. Finish setup and try again.",
+      "not_loaded": "Shelly Bulk is not loaded yet. Finish setup and try again.",
       "allowlist_imported": "Imported {count} devices into this Home Assistant instance."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Shelly Fleet options",
+        "title": "Shelly Bulk options",
         "menu_options": {
           "wifi": "Wi-Fi",
           "security": "Security and timezone",
@@ -75,9 +75,9 @@
       },
       "security": {
         "title": "Security and timezone",
-        "description": "Leave the password blank to keep the stored fleet password. Leave the timezone blank to keep the stored zone.",
+        "description": "Leave the password blank to keep the stored device password. Leave the timezone blank to keep the stored zone.",
         "data": {
-          "fleet_password": "Fleet device password",
+          "fleet_password": "Device password",
           "timezone": "Timezone",
           "disable_cloud": "Disable Shelly Cloud",
           "disable_ap": "Disable the device access point",
@@ -141,7 +141,7 @@
       },
       "allowlist": {
         "title": "Import allowlist",
-        "description": "Path of a CSV you placed in this Home Assistant config directory, for example shelly_fleet/devices.csv. The file is read once and stored in this instance. It is not part of the integration.",
+        "description": "Path of a CSV you placed in this Home Assistant config directory, for example shelly_bulk/devices.csv. The file is read once and stored in this instance. It is not part of the integration.",
         "data": {
           "filename": "File in the config directory",
           "replace": "Replace the current allowlist"
@@ -158,7 +158,7 @@
     },
     "abort": {
       "allowlist_imported": "Imported {count} devices into this Home Assistant instance.",
-      "not_loaded": "Shelly Fleet is not loaded yet. Finish setup and try again."
+      "not_loaded": "Shelly Bulk is not loaded yet. Finish setup and try again."
     }
   },
   "entity": {
@@ -191,11 +191,11 @@
   "services": {
     "apply_profile": {
       "name": "Apply profile",
-      "description": "Apply the fleet security and channel profile to Shelly devices already added by the core Shelly integration. Devices that already have authentication are updated only with the password stored on their Shelly entry. Their password is not replaced.",
+      "description": "Apply the Shelly Bulk security and channel profile to Shelly devices already added by the core Shelly integration. Devices that already have authentication are updated only with the password stored on their Shelly entry. Their password is not replaced.",
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Fleet site name. Required only when more than one fleet entry exists."
+          "description": "Shelly Bulk site name. Required only when more than one Shelly Bulk entry exists."
         },
         "mac": {
           "name": "MAC address",
@@ -217,7 +217,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Fleet site name when more than one entry exists."
+          "description": "Shelly Bulk site name when more than one entry exists."
         },
         "mac": {
           "name": "MAC address",
@@ -247,7 +247,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Fleet site name when more than one entry exists."
+          "description": "Shelly Bulk site name when more than one entry exists."
         },
         "mac": {
           "name": "MAC address",
@@ -281,7 +281,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Fleet site name when more than one entry exists."
+          "description": "Shelly Bulk site name when more than one entry exists."
         },
         "provisioning_minutes": {
           "name": "Timeout (minutes)",
@@ -295,17 +295,17 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Fleet site name when more than one entry exists."
+          "description": "Shelly Bulk site name when more than one entry exists."
         }
       }
     },
     "export_report": {
       "name": "Export report",
-      "description": "Write the adoption report to the config/shelly_fleet directory as CSV, JSON, or both. Secrets are omitted.",
+      "description": "Write the adoption report to the config/shelly_bulk directory as CSV, JSON, or both. Secrets are omitted.",
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Fleet site name when more than one entry exists."
+          "description": "Shelly Bulk site name when more than one entry exists."
         },
         "format": {
           "name": "Format",
@@ -319,11 +319,11 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Fleet site name when more than one entry exists."
+          "description": "Shelly Bulk site name when more than one entry exists."
         },
         "filename": {
           "name": "Filename",
-          "description": "Path relative to the config directory, such as shelly_fleet/devices.csv."
+          "description": "Path relative to the config directory, such as shelly_bulk/devices.csv."
         },
         "replace": {
           "name": "Replace",

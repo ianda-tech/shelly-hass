@@ -1,4 +1,4 @@
-"""Shared entity base for Shelly Fleet."""
+"""Shared entity base for Shelly Bulk."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from .runtime import FleetRuntime
 
 
 class FleetEntity(Entity):
-    """Diagnostic entity attached to the fleet service device."""
+    """Diagnostic entity attached to the Shelly Bulk service device."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
@@ -21,9 +21,9 @@ class FleetEntity(Entity):
         self._attr_unique_id = f"{entry.entry_id}_{unique_suffix}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name=f"Shelly Fleet ({runtime.site_name})",
+            name=f"Shelly Bulk ({runtime.site_name})",
             manufacturer=MANUFACTURER,
-            model="Shelly Fleet",
+            model="Shelly Bulk",
             sw_version=VERSION,
         )
 

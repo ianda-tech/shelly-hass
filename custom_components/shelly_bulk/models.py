@@ -57,7 +57,7 @@ def merge_channel(base: ChannelSettings, override: ChannelSettings) -> ChannelSe
 
 @dataclass
 class SecuritySettings:
-    """Fleet security and identity applied over RPC after Wi-Fi join."""
+    """Security and identity applied over RPC after Wi-Fi join."""
 
     disable_cloud: bool = False
     disable_ap: bool = False
