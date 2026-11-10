@@ -219,8 +219,9 @@ data:
 
 ```yaml
 action: shelly_bulk.apply_profile
-target:
-  device_id: 0123456789abcdef0123456789abcdef
+data:
+  device_id:
+    - 0123456789abcdef0123456789abcdef
 ```
 
 ```yaml
