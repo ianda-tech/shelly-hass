@@ -1,4 +1,17 @@
+<p align="center">
+  <img src="custom_components/shelly_bulk/brand/logo.png" alt="Shelly Bulk" width="256">
+</p>
+
 # Shelly Bulk
+
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![GitHub release](https://img.shields.io/github/v/release/ianda-tech/shelly-hass)](https://github.com/ianda-tech/shelly-hass/releases)
+[![License: MIT](https://img.shields.io/github/license/ianda-tech/shelly-hass)](LICENSE)
+[![hassfest | validate | tests](https://img.shields.io/github/actions/workflow/status/ianda-tech/shelly-hass/ci.yml?branch=main&label=hassfest%20%7C%20validate%20%7C%20tests)](https://github.com/ianda-tech/shelly-hass/actions/workflows/ci.yml)
+[![Home Assistant 2025.12+](https://img.shields.io/badge/home%20assistant-2025.12%2B-blue.svg)](https://github.com/ianda-tech/shelly-hass/blob/main/hacs.json)
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ianda-tech&repository=shelly-hass&category=integration)
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=shelly_bulk)
 
 Shelly Bulk (`shelly_bulk`) is a [HACS](https://hacs.xyz/) custom integration for installers who commission a lot of factory-new Shelly devices into [Home Assistant](https://www.home-assistant.io/). It sits **beside** the built-in Shelly integration. It does not replace it, and it does not speak a private provisioning protocol when Home Assistant already can.
 
@@ -45,13 +58,13 @@ Profiles are sent with Gen2+ RPC (`Sys.SetConfig`, `WiFi.SetConfig`, `Cloud.SetC
 - mDNS (or a reflector) between the IoT VLAN and Home Assistant. After Wi-Fi provisioning, core Shelly waits for the device to announce itself. Without mDNS the flow falls back to an active lookup and often times out.
 - Admin access to Home Assistant. Shelly Bulk writes the core Shelly config entry (scanner mode, and the device password after `Shelly.SetAuth`).
 
-## Install with HACS
+## Quick install
 
-1. In HACS, open **Integrations**, then the menu, then **Custom repositories**.
-2. Add `https://github.com/ianda-tech/shelly-hass` as an **Integration**.
-3. Download **Shelly Bulk**.
-4. Restart Home Assistant.
-5. Go to **Settings → Devices & services → Add integration → Shelly Bulk**.
+1. Use **Open HACS repository** above. It adds `ianda-tech/shelly-hass` as a custom integration repository. Download **Shelly Bulk** in HACS.
+2. Restart Home Assistant.
+3. Use **Add integration** above. The domain is `shelly_bulk`. Enter the site values on that instance. Nothing in this repository is pre-filled.
+
+The same buttons work only when you are on your own Home Assistant and My Home Assistant can reach it.
 
 ## Install manually
 
