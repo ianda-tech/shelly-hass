@@ -1,8 +1,14 @@
 apply_profile:
-  target:
-    device:
-      integration: shelly
   fields:
+    device_id:
+      selector:
+        device:
+          integration: shelly
+          multiple: true
+    area_id:
+      selector:
+        area:
+          multiple: true
     site:
       selector:
         text:
@@ -17,10 +23,16 @@ apply_profile:
         text:
 
 set_input_mode:
-  target:
-    device:
-      integration: shelly
   fields:
+    device_id:
+      selector:
+        device:
+          integration: shelly
+          multiple: true
+    area_id:
+      selector:
+        area:
+          multiple: true
     site:
       selector:
         text:
@@ -55,10 +67,16 @@ set_input_mode:
         boolean:
 
 set_dimmer_fade:
-  target:
-    device:
-      integration: shelly
   fields:
+    device_id:
+      selector:
+        device:
+          integration: shelly
+          multiple: true
+    area_id:
+      selector:
+        area:
+          multiple: true
     site:
       selector:
         text:

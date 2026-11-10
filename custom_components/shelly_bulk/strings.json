@@ -193,6 +193,14 @@
       "name": "Apply profile",
       "description": "Apply the Shelly Bulk security and channel profile to Shelly devices already added by the core Shelly integration. Devices that already have authentication are updated only with the password stored on their Shelly entry. Their password is not replaced.",
       "fields": {
+        "device_id": {
+          "name": "Devices",
+          "description": "Core Shelly devices to update. Optional if you pass a MAC, an area, or all Shelly devices."
+        },
+        "area_id": {
+          "name": "Areas",
+          "description": "Update every core Shelly device in these areas."
+        },
         "site": {
           "name": "Site",
           "description": "Shelly Bulk site name. Required only when more than one Shelly Bulk entry exists."
@@ -215,13 +223,21 @@
       "name": "Set input mode",
       "description": "Set the input type, behaviour, or invert flag on one input of a Shelly device.",
       "fields": {
+        "device_id": {
+          "name": "Devices",
+          "description": "Core Shelly devices to update."
+        },
+        "area_id": {
+          "name": "Areas",
+          "description": "Update every core Shelly device in these areas."
+        },
         "site": {
           "name": "Site",
           "description": "Shelly Bulk site name when more than one entry exists."
         },
         "mac": {
           "name": "MAC address",
-          "description": "Device MAC, if you are not using a target."
+          "description": "Device MAC, if you are not picking a device above."
         },
         "input_id": {
           "name": "Input id",
@@ -245,13 +261,21 @@
       "name": "Set dimmer fade",
       "description": "Set button fade rate and transition time on one dimmer channel.",
       "fields": {
+        "device_id": {
+          "name": "Devices",
+          "description": "Core Shelly devices to update."
+        },
+        "area_id": {
+          "name": "Areas",
+          "description": "Update every core Shelly device in these areas."
+        },
         "site": {
           "name": "Site",
           "description": "Shelly Bulk site name when more than one entry exists."
         },
         "mac": {
           "name": "MAC address",
-          "description": "Device MAC, if you are not using a target."
+          "description": "Device MAC, if you are not picking a device above."
         },
         "channel": {
           "name": "Channel",

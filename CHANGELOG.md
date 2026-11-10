@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+- Service calls that take a Shelly device now use a device selector. Home Assistant no longer accepts a device filter on a service target, which was failing hassfest.
+- Brand icon and logo ship in the integration so HACS does not require a separate brands-repository entry.
+- Manifest categories are plugs and switches, and lighting.
+
 ## 0.1.1
 
 - Renamed the integration from Shelly Fleet to Shelly Bulk. The domain is `shelly_bulk`. The repository name is still shelly-hass. Nothing had been released, so there is no config migration.
