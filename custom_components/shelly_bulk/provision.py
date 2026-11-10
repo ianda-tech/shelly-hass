@@ -82,7 +82,7 @@ class Provisioner:
         self._register_bluetooth()
         if self._task is None or self._task.done():
             self._task = self.hass.async_create_background_task(
-                self._run(), name="shelly_fleet_provision"
+                self._run(), name="shelly_bulk_provision"
             )
         self.runtime.notify()
         _LOGGER.info(
@@ -305,7 +305,7 @@ class Provisioner:
         self.runtime.record(
             mac,
             "skipped_auth",
-            "The device already asks for a password. Fleet credentials were not sent.",
+            "The device already asks for a password. The Shelly Bulk device password was not sent.",
         )
 
     async def _safe_abort(self, flow_id: str) -> None:

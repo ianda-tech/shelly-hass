@@ -1,4 +1,4 @@
-"""Config and options flow for Shelly Fleet.
+"""Config and options flow for Shelly Bulk.
 
 Site values are collected here and stored on the config entry. Nothing in the
 package is a default SSID, password, timezone, or device list.
@@ -127,8 +127,8 @@ def _behaviour_options(user_input: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-class ShellyFleetConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Collect site Wi-Fi, the fleet password, and generic behaviour."""
+class ShellyBulkConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Collect site Wi-Fi, the device password, and generic behaviour."""
 
     VERSION = 1
     MINOR_VERSION = 1
@@ -182,11 +182,11 @@ class ShellyFleetConfigFlow(ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: ConfigEntry) -> ShellyFleetOptionsFlow:
-        return ShellyFleetOptionsFlow()
+    def async_get_options_flow(config_entry: ConfigEntry) -> ShellyBulkOptionsFlow:
+        return ShellyBulkOptionsFlow()
 
 
-class ShellyFleetOptionsFlow(OptionsFlow):
+class ShellyBulkOptionsFlow(OptionsFlow):
     """Edit Wi-Fi, security, profiles, and import an allowlist."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

@@ -1,4 +1,4 @@
-"""Shelly Fleet: bulk Bluetooth adoption beside Home Assistant's Shelly integration."""
+"""Shelly Bulk: bulk Bluetooth adoption beside Home Assistant's Shelly integration."""
 
 from __future__ import annotations
 
@@ -46,16 +46,16 @@ def _runtime(hass: HomeAssistant, call: ServiceCall) -> FleetRuntime:
         for runtime in runtimes.values():
             if runtime.site_name == site:
                 return runtime
-        raise ServiceValidationError(f"No Shelly Fleet entry named {site}")
+        raise ServiceValidationError(f"No Shelly Bulk entry named {site}")
     if len(runtimes) == 1:
         return next(iter(runtimes.values()))
     if not runtimes:
-        raise ServiceValidationError("Shelly Fleet is not set up")
-    raise ServiceValidationError("More than one Shelly Fleet entry is set up; pass site")
+        raise ServiceValidationError("Shelly Bulk is not set up")
+    raise ServiceValidationError("More than one Shelly Bulk entry is set up; pass site")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
-    """Set up Shelly Fleet from a config entry."""
+    """Set up Shelly Bulk from a config entry."""
     runtime = FleetRuntime(hass, entry)
     await runtime.async_load()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime

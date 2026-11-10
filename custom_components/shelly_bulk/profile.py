@@ -1,4 +1,4 @@
-"""Build Gen2+ RPC calls for a fleet profile.
+"""Build Gen2+ RPC calls for a Shelly Bulk profile.
 
 Field names follow the Shelly Gen2 RPC docs (Switch, Input, Light, Sys, Cloud,
 WiFi, BLE, Shelly). Fields that differ by model are included only when the

@@ -1,4 +1,4 @@
-"""Pytest setup for the Shelly Fleet custom integration."""
+"""Pytest setup for the Shelly Bulk custom integration."""
 
 from __future__ import annotations
 

@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.shelly_fleet.const import (
+from custom_components.shelly_bulk.const import (
     CONF_BLE_SCANNER_MODE,
     CONF_DISABLE_AP,
     CONF_DISABLE_BLE_RPC,
@@ -23,7 +23,7 @@ from custom_components.shelly_fleet.const import (
     CONF_WIFI_SSID,
     DOMAIN,
 )
-from custom_components.shelly_fleet.diagnostics import async_get_config_entry_diagnostics
+from custom_components.shelly_bulk.diagnostics import async_get_config_entry_diagnostics
 
 USER = {
     CONF_SITE_NAME: "Example site",
@@ -165,7 +165,7 @@ async def test_provisioning_answers_bluetooth_flow_and_sets_scanner(hass, monkey
     async def _open(*_args, **_kwargs):
         return fake
 
-    monkeypatch.setattr("custom_components.shelly_fleet.runtime.async_open_rpc", _open)
+    monkeypatch.setattr("custom_components.shelly_bulk.runtime.async_open_rpc", _open)
 
     flows = [
         {
@@ -216,7 +216,7 @@ async def test_credentials_step_is_not_given_the_fleet_password(hass, monkeypatc
     await hass.async_block_till_done()
     runtime = hass.data[DOMAIN][entry.entry_id]
     opened = AsyncMock()
-    monkeypatch.setattr("custom_components.shelly_fleet.runtime.async_open_rpc", opened)
+    monkeypatch.setattr("custom_components.shelly_bulk.runtime.async_open_rpc", opened)
 
     flows = [
         {
@@ -247,7 +247,7 @@ async def test_import_and_export_round_trip(hass) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    folder = Path(hass.config.path("shelly_fleet_reports"))
+    folder = Path(hass.config.path("shelly_bulk_reports"))
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "devices.csv").write_text(
         "mac,name,room\n00:00:00:00:00:02,Example lamp,Example room\n",
@@ -256,7 +256,7 @@ async def test_import_and_export_round_trip(hass) -> None:
     imported = await hass.services.async_call(
         DOMAIN,
         "import_allowlist",
-        {"filename": "shelly_fleet_reports/devices.csv"},
+        {"filename": "shelly_bulk_reports/devices.csv"},
         blocking=True,
         return_response=True,
     )

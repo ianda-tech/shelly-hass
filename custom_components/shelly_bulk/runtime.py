@@ -1,4 +1,4 @@
-"""Runtime state for one Shelly Fleet config entry."""
+"""Runtime state for one Shelly Bulk config entry."""
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ class FleetRuntime:
 
     @property
     def site_name(self) -> str:
-        return str(self.entry.data.get(CONF_SITE_NAME) or "Shelly Fleet")
+        return str(self.entry.data.get(CONF_SITE_NAME) or "Shelly Bulk")
 
     @property
     def require_allowlist(self) -> bool:
@@ -234,7 +234,7 @@ class FleetRuntime:
 
     async def async_export_report(self, report_format: str = "both") -> dict[str, str]:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        folder = Path(self.hass.config.path("shelly_fleet"))
+        folder = Path(self.hass.config.path("shelly_bulk"))
         slug = "".join(char if char.isalnum() or char in "-_" else "-" for char in self.site_name.lower())
         slug = slug.strip("-") or "site"
         rows = self._report_rows()

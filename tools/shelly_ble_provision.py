@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Optional workshop tool for pre-staging Shelly devices without the integration.
 
-UNTESTED ON REAL HARDWARE. Prefer the Shelly Fleet integration when Home
+UNTESTED ON REAL HARDWARE. Prefer the Shelly Bulk integration when Home
 Assistant can hear the devices. This script is for a bench laptop or Pi that
 is not on the site instance.
 
@@ -162,7 +162,7 @@ class ShellyBleRpc:
 
     async def call(self, method: str, params: dict | None = None, timeout: float = 15) -> Any:
         self._id += 1
-        request: dict[str, Any] = {"id": self._id, "src": "shelly-fleet", "method": method}
+        request: dict[str, Any] = {"id": self._id, "src": "shelly-bulk", "method": method}
         if params is not None:
             request["params"] = params
         raw = json.dumps(request, separators=(",", ":")).encode()
