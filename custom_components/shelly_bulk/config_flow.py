@@ -26,6 +26,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from .security import SECURE_OPTION_DEFAULTS
 from .const import (
     BLE_SCANNER_MODES,
     CONF_APPLY_DIMMER_PROFILE,
@@ -192,7 +193,16 @@ class ShellyBulkOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["wifi", "security", "inputs", "outputs", "dimmers", "provisioning", "allowlist"],
+            menu_options=[
+                "wifi",
+                "security",
+                "secure",
+                "inputs",
+                "outputs",
+                "dimmers",
+                "provisioning",
+                "allowlist",
+            ],
         )
 
     async def async_step_wifi(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -457,6 +467,25 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                 }
             ),
         )
+
+    async def async_step_secure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Store the secure-profile checklist. The password field updates entry data."""
+        if user_input is not None:
+            data = dict(self.config_entry.data)
+            if str(user_input.get(CONF_FLEET_PASSWORD) or ""):
+                data[CONF_FLEET_PASSWORD] = str(user_input[CONF_FLEET_PASSWORD])
+                self.hass.config_entries.async_update_entry(self.config_entry, data=data)
+            options = dict(self.config_entry.options)
+            for key in SECURE_OPTION_DEFAULTS:
+                options[key] = bool(user_input.get(key, SECURE_OPTION_DEFAULTS[key]))
+            return self.async_create_entry(data=options)
+        options = self.config_entry.options
+        schema: dict[Any, Any] = {
+            vol.Optional(CONF_FLEET_PASSWORD, default=""): _PASSWORD,
+        }
+        for key, default in SECURE_OPTION_DEFAULTS.items():
+            schema[vol.Required(key, default=bool(options.get(key, default)))] = BooleanSelector()
+        return self.async_show_form(step_id="secure", data_schema=vol.Schema(schema))
 
     async def async_step_allowlist(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}

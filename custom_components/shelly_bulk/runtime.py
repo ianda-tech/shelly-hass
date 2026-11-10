@@ -52,8 +52,15 @@ from .const import (
     VERSION,
 )
 from .models import AllowDevice, Allowlist, ChannelSettings
+from .advanced import read_setting, scanner_mode_valid, write_setting
 from .profile import build_set_auth, plan_config_calls, security_from_entry
 from .provision import Provisioner
+from .security import (
+    apply_secure_profile,
+    evaluate_security,
+    read_security_state,
+    secure_profile_from,
+)
 from .redact import SecretFilter, redact
 from .rpc import AuthRequiredError, async_execute_calls, async_open_rpc
 from .util import display_mac, normalize_mac
@@ -72,6 +79,7 @@ class FleetRuntime:
         self.failed = 0
         self.last_error = ""
         self.results: list[dict[str, Any]] = []
+        self.last_audit: list[dict[str, Any]] = []
         self.provisioner = Provisioner(self)
         self._listeners: list[Any] = []
         self._store = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
@@ -634,6 +642,224 @@ class FleetRuntime:
             kwargs["area_id"] = area.id
         dev_reg.async_update_device(primary.id, **kwargs)
         return f"Home Assistant name/area updated ({room})" if room or name else ""
+
+    async def secure_devices(self, **selectors: Any) -> list[dict[str, Any]]:
+        """Apply the secure profile and read each checklist item back."""
+        overrides = {key: selectors[key] for key in selectors if key in {
+            "rotate_password",
+            "disable_cloud",
+            "disable_ap",
+            "disable_ble_rpc",
+            "disable_mqtt",
+            "disable_ws",
+            "disable_debug",
+            "firmware_manual",
+            "restrict_web_ui",
+        }}
+        profile = secure_profile_from(self.entry.options, overrides)
+        password = str(self.entry.data.get(CONF_FLEET_PASSWORD) or "")
+        if profile.rotate_password and not password:
+            raise ServiceValidationError(
+                "Set the device password in the Shelly Bulk options before securing devices"
+            )
+        entries = self._select_shelly_entries(
+            device_ids=selectors.get("device_ids") or set(),
+            area_ids=selectors.get("area_ids") or set(),
+            mac=selectors.get("mac"),
+            all_shelly=bool(selectors.get("all_shelly")),
+            model_contains=selectors.get("model_contains"),
+        )
+        if not entries:
+            raise ServiceValidationError("No core Shelly devices matched")
+        reports = []
+        for entry in entries:
+            reports.append(await self._secure_one(entry, profile, password))
+        self.last_audit = reports
+        self.notify()
+        return reports
+
+    async def audit_devices(self, **selectors: Any) -> list[dict[str, Any]]:
+        """Read security state without changing devices."""
+        profile = secure_profile_from(self.entry.options, None)
+        entries = self._select_shelly_entries(
+            device_ids=selectors.get("device_ids") or set(),
+            area_ids=selectors.get("area_ids") or set(),
+            mac=selectors.get("mac"),
+            all_shelly=bool(selectors.get("all_shelly")) or not any(
+                (selectors.get("device_ids"), selectors.get("area_ids"), selectors.get("mac"))
+            ),
+            model_contains=selectors.get("model_contains"),
+        )
+        if not entries:
+            raise ServiceValidationError("No core Shelly devices matched")
+        reports = []
+        for entry in entries:
+            reports.append(await self._audit_one(entry, profile))
+        self.last_audit = reports
+        self.notify()
+        return reports
+
+    async def set_advanced(self, settings: dict[str, Any], **selectors: Any) -> list[dict[str, Any]]:
+        """Apply advanced settings and return the read-back for each device."""
+        if not settings:
+            raise ServiceValidationError("Choose at least one advanced setting")
+        entries = self._select_shelly_entries(
+            device_ids=selectors.get("device_ids") or set(),
+            area_ids=selectors.get("area_ids") or set(),
+            mac=selectors.get("mac"),
+            all_shelly=bool(selectors.get("all_shelly")),
+            model_contains=selectors.get("model_contains"),
+        )
+        if not entries:
+            raise ServiceValidationError("No core Shelly devices matched")
+        channel = int(selectors.get("channel") or 0)
+        reports = []
+        for entry in entries:
+            reports.append(await self._advanced_one(entry, settings, channel))
+        return reports
+
+    async def read_device_setting(self, entry: ConfigEntry, key: str, channel: int = 0) -> Any:
+        if key == "scanner_mode":
+            return str(entry.options.get(CONF_BLE_SCANNER_MODE) or "disabled")
+        session = await self._open_shelly(entry)
+        try:
+            return await read_setting(session, key, channel=channel)
+        finally:
+            await session.shutdown()
+
+    async def write_device_setting(self, entry: ConfigEntry, key: str, value: Any, channel: int = 0) -> Any:
+        if key == "scanner_mode":
+            mode = str(value)
+            if not scanner_mode_valid(mode):
+                raise ServiceValidationError(f"Scanner mode must be one of {', '.join(BLE_SCANNER_MODES)}")
+            options = dict(entry.options)
+            options[CONF_BLE_SCANNER_MODE] = mode
+            self.hass.config_entries.async_update_entry(entry, options=options)
+            updated = self.hass.config_entries.async_get_entry(entry.entry_id) or entry
+            return str(updated.options.get(CONF_BLE_SCANNER_MODE) or mode)
+        session = await self._open_shelly(entry)
+        try:
+            read_back, note = await write_setting(session, key, value, channel=channel)
+        finally:
+            await session.shutdown()
+        if note:
+            raise ServiceValidationError(note)
+        return read_back
+
+    async def _open_shelly(self, entry: ConfigEntry):
+        host = entry.data.get(CONF_HOST)
+        if not host:
+            raise ServiceValidationError("The Shelly entry has no host")
+        username = entry.data.get(CONF_USERNAME) or None
+        password = entry.data.get(CONF_PASSWORD) or None
+        if username and not password:
+            username = None
+        return await self._connect_with_retries(
+            host,
+            int(entry.data.get(CONF_PORT) or 80),
+            username,
+            password,
+            bool(entry.data.get(CONF_VERIFY_SSL, False)),
+        )
+
+    async def _secure_one(self, entry: ConfigEntry, profile, password: str) -> dict[str, Any]:
+        mac = entry.unique_id or entry.entry_id
+        notes: list[str] = []
+        session = None
+        try:
+            session = await self._open_shelly(entry)
+            if int((session.shelly or {}).get("gen") or 0) == 1:
+                return self._audit_row(mac, {"ok": False, "issues": ["Gen1 devices are not supported"]}, notes)
+            auth_set = await apply_secure_profile(session, profile, password, notes, self.redact)
+            if auth_set:
+                params = build_set_auth(str(session.shelly.get("id") or "device"), password)
+                self._extra_secrets.add(password)
+                self._extra_secrets.add(params["ha1"])
+            await session.shutdown()
+            session = None
+            reconnected = True
+            if auth_set:
+                self._store_shelly_password(entry, password)
+                try:
+                    session = await self._connect_with_retries(
+                        entry.data.get(CONF_HOST),
+                        int(entry.data.get(CONF_PORT) or 80),
+                        "admin",
+                        password,
+                        bool(entry.data.get(CONF_VERIFY_SSL, False)),
+                    )
+                except Exception as err:  # noqa: BLE001
+                    reconnected = False
+                    notes.append(f"Reconnect failed: {self.redact(str(err))}")
+            if session is None and reconnected:
+                session = await self._open_shelly(entry)
+            state = await read_security_state(session, notes, self.redact) if session is not None else {"shelly": {}}
+            report = evaluate_security(state, profile, reconnected)
+            report["mac"] = display_mac(mac) if _is_mac(str(mac)) else str(mac)
+            report["notes"] = notes
+            self.record(
+                mac,
+                "secured" if report["ok"] else "not_secure",
+                "; ".join(report["issues"]),
+                notes=notes,
+            )
+            return report
+        except Exception as err:  # noqa: BLE001
+            message = self.redact(str(err))
+            self.record(mac, "failed", message, notes=notes)
+            return self._audit_row(mac, {"ok": False, "issues": [message], "reconnected": False}, notes)
+        finally:
+            if session is not None:
+                await session.shutdown()
+
+    async def _audit_one(self, entry: ConfigEntry, profile) -> dict[str, Any]:
+        mac = entry.unique_id or entry.entry_id
+        notes: list[str] = []
+        session = None
+        try:
+            session = await self._open_shelly(entry)
+            state = await read_security_state(session, notes, self.redact)
+            report = evaluate_security(state, profile, True)
+            report["mac"] = display_mac(mac) if _is_mac(str(mac)) else str(mac)
+            report["notes"] = notes
+            return report
+        except Exception as err:  # noqa: BLE001
+            return self._audit_row(mac, {"ok": False, "issues": [self.redact(str(err))], "reconnected": False}, notes)
+        finally:
+            if session is not None:
+                await session.shutdown()
+
+    async def _advanced_one(self, entry: ConfigEntry, settings: dict[str, Any], channel: int) -> dict[str, Any]:
+        mac = entry.unique_id or entry.entry_id
+        read_back: dict[str, Any] = {}
+        notes: list[str] = []
+        for key, value in settings.items():
+            if value is None:
+                continue
+            try:
+                read_back[key] = await self.write_device_setting(entry, key, value, channel)
+            except Exception as err:  # noqa: BLE001
+                notes.append(f"{key}: {self.redact(str(err))}")
+                read_back[key] = None
+        return {
+            "mac": display_mac(mac) if _is_mac(str(mac)) else str(mac),
+            "read_back": read_back,
+            "notes": notes,
+            "ok": not notes,
+        }
+
+    def _store_shelly_password(self, entry: ConfigEntry, password: str) -> None:
+        data = dict(entry.data)
+        data[CONF_USERNAME] = "admin"
+        data[CONF_PASSWORD] = password
+        self.hass.config_entries.async_update_entry(entry, data=data)
+
+    def _audit_row(self, mac: str, report: dict[str, Any], notes: list[str]) -> dict[str, Any]:
+        report.setdefault("issues", [])
+        report["mac"] = display_mac(mac) if _is_mac(str(mac)) else str(mac)
+        report["notes"] = notes
+        report.setdefault("ok", False)
+        return report
 
     async def _wait_settled(self, entry: ConfigEntry) -> None:
         deadline = asyncio.get_running_loop().time() + 30

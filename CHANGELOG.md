@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- Secure profile, in the options flow and the `secure_devices` service. It sets or rotates digest auth, and can turn off cloud, the access point, Bluetooth RPC, MQTT, the outbound websocket, and debug/UDP logging. Bluetooth stays enabled for the scanner. Web UI discovery can be turned off. Firmware updates stay manual because Gen2+ has no documented auto-update switch.
+- After a password change, the core Shelly config entry is updated and Shelly Bulk opens the device again with the new password.
+- `audit_security` and the Security audit sensor report auth, cloud, access point, Bluetooth RPC, and firmware for each device. Passwords are not included.
+- Advanced config switches and selects, disabled until enabled, plus the `set_advanced` service. Each change is read back. Models without the component are skipped.
+
 ## 0.1.2
 
 - Service calls that take a Shelly device now use a device selector. Home Assistant no longer accepts a device filter on a service target, which was failing hassfest.

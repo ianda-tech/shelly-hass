@@ -20,13 +20,16 @@ from .const import (
     SERVICE_IMPORT_ALLOWLIST,
     SERVICE_SET_DIMMER_FADE,
     SERVICE_SET_INPUT_MODE,
+    SERVICE_SECURE_DEVICES,
+    SERVICE_AUDIT_SECURITY,
+    SERVICE_SET_ADVANCED,
     SERVICE_START_PROVISIONING,
     SERVICE_STOP_PROVISIONING,
 )
 from .runtime import FleetRuntime
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
+PLATFORMS = [Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
 
 CONFIG_ENTRY = ConfigEntry[FleetRuntime]
 
@@ -81,6 +84,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
             SERVICE_STOP_PROVISIONING,
             SERVICE_EXPORT_REPORT,
             SERVICE_IMPORT_ALLOWLIST,
+            SERVICE_SECURE_DEVICES,
+            SERVICE_AUDIT_SECURITY,
+            SERVICE_SET_ADVANCED,
         ):
             hass.services.async_remove(DOMAIN, service)
     return unloaded
@@ -193,6 +199,90 @@ def _async_register_services(hass: HomeAssistant) -> None:
     )
 
 
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SECURE_DEVICES,
+        _secure_devices,
+        schema=vol.Schema(
+            {
+                vol.Optional("site"): cv.string,
+                vol.Optional("mac"): cv.string,
+                vol.Optional("all_shelly"): cv.boolean,
+                vol.Optional("rotate_password"): cv.boolean,
+                vol.Optional("disable_cloud"): cv.boolean,
+                vol.Optional("disable_ap"): cv.boolean,
+                vol.Optional("disable_ble_rpc"): cv.boolean,
+                vol.Optional("disable_mqtt"): cv.boolean,
+                vol.Optional("disable_ws"): cv.boolean,
+                vol.Optional("disable_debug"): cv.boolean,
+                vol.Optional("firmware_manual"): cv.boolean,
+                vol.Optional("restrict_web_ui"): cv.boolean,
+            },
+            extra=vol.ALLOW_EXTRA,
+        ),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_AUDIT_SECURITY,
+        _audit_security,
+        schema=vol.Schema(
+            {
+                vol.Optional("site"): cv.string,
+                vol.Optional("mac"): cv.string,
+                vol.Optional("all_shelly"): cv.boolean,
+            },
+            extra=vol.ALLOW_EXTRA,
+        ),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_ADVANCED,
+        _set_advanced,
+        schema=vol.Schema(
+            {
+                vol.Optional("site"): cv.string,
+                vol.Optional("mac"): cv.string,
+                vol.Optional("all_shelly"): cv.boolean,
+                vol.Optional("channel", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=7)),
+                vol.Optional("bluetooth"): cv.boolean,
+                vol.Optional("ble_rpc"): cv.boolean,
+                vol.Optional("scanner_mode"): vol.In(["active", "auto", "passive", "disabled"]),
+                vol.Optional("cloud"): cv.boolean,
+                vol.Optional("access_point"): cv.boolean,
+                vol.Optional("mqtt"): cv.boolean,
+                vol.Optional("eco_mode"): cv.boolean,
+                vol.Optional("status_led"): cv.boolean,
+                vol.Optional("debug_logging"): cv.boolean,
+                vol.Optional("input_type"): vol.In(["switch", "button"]),
+                vol.Optional("input_mode"): cv.string,
+                vol.Optional("power_on_state"): cv.string,
+                vol.Optional("auto_on"): cv.boolean,
+                vol.Optional("auto_off"): cv.boolean,
+                vol.Optional("auto_on_delay"): vol.Coerce(float),
+                vol.Optional("auto_off_delay"): vol.Coerce(float),
+                vol.Optional("fade_rate"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
+                vol.Optional("transition_duration"): vol.Coerce(float),
+                vol.Optional("device_name"): cv.string,
+            },
+            extra=vol.ALLOW_EXTRA,
+        ),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+
+def _selectors(call: ServiceCall) -> dict[str, Any]:
+    return {
+        "device_ids": _ids(call.data.get("device_id")),
+        "area_ids": _ids(call.data.get("area_id")),
+        "mac": call.data.get("mac"),
+        "all_shelly": bool(call.data.get("all_shelly")),
+        "model_contains": call.data.get("model_contains"),
+        "channel": call.data.get("channel") or 0,
+    }
+
+
 async def _apply_profile(call: ServiceCall) -> dict[str, Any] | None:
     runtime = _runtime(call.hass, call)
     rows = await runtime.apply_profile(
@@ -249,6 +339,61 @@ async def _export(call: ServiceCall) -> dict[str, str] | None:
     paths = await _runtime(call.hass, call).async_export_report(call.data.get("format") or "both")
     if call.return_response:
         return paths
+    return None
+
+
+async def _secure_devices(call: ServiceCall) -> dict[str, Any] | None:
+    keys = (
+        "rotate_password",
+        "disable_cloud",
+        "disable_ap",
+        "disable_ble_rpc",
+        "disable_mqtt",
+        "disable_ws",
+        "disable_debug",
+        "firmware_manual",
+        "restrict_web_ui",
+    )
+    overrides = {key: call.data[key] for key in keys if key in call.data}
+    rows = await _runtime(call.hass, call).secure_devices(**_selectors(call), **overrides)
+    if call.return_response:
+        return {"results": rows}
+    return None
+
+
+async def _audit_security(call: ServiceCall) -> dict[str, Any] | None:
+    rows = await _runtime(call.hass, call).audit_devices(**_selectors(call))
+    if call.return_response:
+        return {"results": rows}
+    return None
+
+
+async def _set_advanced(call: ServiceCall) -> dict[str, Any] | None:
+    setting_keys = (
+        "bluetooth",
+        "ble_rpc",
+        "scanner_mode",
+        "cloud",
+        "access_point",
+        "mqtt",
+        "eco_mode",
+        "status_led",
+        "debug_logging",
+        "input_type",
+        "input_mode",
+        "power_on_state",
+        "auto_on",
+        "auto_off",
+        "auto_on_delay",
+        "auto_off_delay",
+        "fade_rate",
+        "transition_duration",
+        "device_name",
+    )
+    settings = {key: call.data[key] for key in setting_keys if key in call.data}
+    rows = await _runtime(call.hass, call).set_advanced(settings, **_selectors(call))
+    if call.return_response:
+        return {"results": rows}
     return None
 
 

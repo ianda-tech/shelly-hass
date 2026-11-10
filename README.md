@@ -180,6 +180,62 @@ On light-like channels, when the dimmer profile is on:
 
 `apply_profile` runs the same plan against Shellies that are already in Home Assistant. Target a device, an area, a MAC, a model substring, or every Shelly entry.
 
+## Securing devices
+
+The secure profile is a checklist, not a silent change. Set the device password under **Configure → Security and timezone** or **Configure → Secure profile**. Leave the password box blank to keep the stored one. Then run **Secure devices**, or call `shelly_bulk.secure_devices`. You can secure one device, an area, or every core Shelly.
+
+Shelly Bulk applies the calls, reads each setting back, updates the core Shelly entry with `admin` and the new password when authentication changed, and opens the device again to confirm the password works. The password and the HA1 digest are not written to logs, diagnostics, or the audit.
+
+| Checklist item | RPC | Default |
+| --- | --- | --- |
+| Set or rotate the device password | `Shelly.SetAuth` (user `admin`, realm = device id, HA1 = SHA-256 of `admin:id:password`) | On |
+| Disable Shelly Cloud | `Cloud.SetConfig` `enable: false` | On |
+| Disable the Wi-Fi access point | `WiFi.SetConfig` `ap.enable: false` | On |
+| Disable Bluetooth RPC, keep Bluetooth | `BLE.SetConfig` `enable: true`, `rpc.enable: false` | On |
+| Disable MQTT | `MQTT.SetConfig` `enable: false` | Off. Skipped when the device has no MQTT component |
+| Disable outbound websocket | `Ws.SetConfig` `enable: false` | Off |
+| Disable debug and UDP logging | `Sys.SetConfig` `debug.*` off and `rpc_udp.listen_port: null` | On |
+| Keep firmware updates manual | Does not call `Shelly.Update`. Gen2+ has no documented auto-update switch; cloud push stops when cloud is off | Off |
+| Restrict the web UI | `Sys.SetConfig` `device.discoverable: false`. The page itself is gated by the device password | Off |
+
+`audit_security` only reads. The **Security audit** sensor shows `passed/total` and the same fields per device: auth on, cloud off, access point off, Bluetooth RPC off, firmware version.
+
+```yaml
+action: shelly_bulk.secure_devices
+data:
+  mac: "00:00:00:00:00:01"
+  disable_mqtt: true
+  restrict_web_ui: true
+```
+
+```yaml
+action: shelly_bulk.audit_security
+data:
+  all_shelly: true
+```
+
+## Advanced settings
+
+Each core Shelly gets config switches and selects: Bluetooth, Bluetooth RPC, scanner mode, cloud, access point, MQTT, eco mode, status LED, debug logging, input behaviour, and power-on state. They are **disabled by default** so a large install does not poll every device. Enable the ones you want on the device page. Changing one reads the new value back from the device.
+
+Scanner mode is the core Shelly option `ble_scanner_mode` (`active`, `auto`, `passive`, `disabled`). The others are Gen2+ RPC. A model without that component is left unchanged and the result says so.
+
+`set_advanced` is the bulk form of the same settings, plus input type, auto-on and auto-off timers, dimmer fade rate, transition time, and the Shelly device name.
+
+```yaml
+action: shelly_bulk.set_advanced
+data:
+  mac: "00:00:00:00:00:01"
+  channel: 0
+  input_mode: detached
+  power_on_state: restore_last
+  auto_off: true
+  auto_off_delay: 120
+  fade_rate: 2
+  cloud: false
+  scanner_mode: active
+```
+
 ## Services
 
 Replace the sample MAC and the filename. Call these from **Developer tools → Actions**, an automation, or a script. `site` is only required when you have more than one Shelly Bulk entry.

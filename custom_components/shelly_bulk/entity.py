@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
-from .const import DOMAIN, MANUFACTURER, VERSION
+from .const import DOMAIN, MANUFACTURER, SHELLY_DOMAIN, VERSION
 from .runtime import FleetRuntime
 
 
@@ -33,3 +34,15 @@ class FleetEntity(Entity):
 
     def _handle_update(self) -> None:
         self.async_write_ha_state()
+
+
+def shelly_device_info(hass, entry) -> DeviceInfo:
+    """Attach an entity to the core Shelly device when it already exists."""
+    registry = dr.async_get(hass)
+    devices = dr.async_entries_for_config_entry(registry, entry.entry_id)
+    primary = next((device for device in devices if device.via_device_id is None), None)
+    if primary is None and devices:
+        primary = devices[0]
+    if primary is not None and primary.identifiers:
+        return DeviceInfo(identifiers=set(primary.identifiers))
+    return DeviceInfo(identifiers={(SHELLY_DOMAIN, entry.unique_id or entry.entry_id)})

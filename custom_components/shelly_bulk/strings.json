@@ -58,6 +58,7 @@
         "menu_options": {
           "wifi": "Wi-Fi",
           "security": "Security and timezone",
+          "secure": "Secure profile",
           "inputs": "Input profile",
           "outputs": "Output profile",
           "dimmers": "Dimmer profile",
@@ -82,6 +83,27 @@
           "disable_cloud": "Disable Shelly Cloud",
           "disable_ap": "Disable the device access point",
           "disable_ble_rpc": "Disable Bluetooth RPC"
+        }
+      },
+      "secure": {
+        "title": "Secure profile",
+        "description": "Hardening applied by the Secure devices action. The password box updates the stored device password when you type one; leave it blank to keep the stored password. It is not written to logs or diagnostics.",
+        "data": {
+          "fleet_password": "Device password",
+          "secure_rotate_password": "Set or rotate the device password",
+          "secure_disable_cloud": "Disable Shelly Cloud",
+          "secure_disable_ap": "Disable the Wi-Fi access point",
+          "secure_disable_ble_rpc": "Disable Bluetooth RPC",
+          "secure_disable_mqtt": "Disable MQTT",
+          "secure_disable_ws": "Disable outbound websocket",
+          "secure_disable_debug": "Disable debug and UDP logging",
+          "secure_firmware_manual": "Keep firmware updates manual",
+          "secure_restrict_web_ui": "Restrict web UI discovery"
+        },
+        "data_description": {
+          "secure_disable_ble_rpc": "Bluetooth itself stays on so an enabled scanner proxy keeps working.",
+          "secure_firmware_manual": "Gen2+ has no auto-update switch. This skips Shelly.Update. Cloud push stops when cloud is off.",
+          "secure_restrict_web_ui": "Turns off mDNS discovery. The web UI still requires the device password when authentication is on."
         }
       },
       "inputs": {
@@ -174,12 +196,36 @@
       },
       "last_error": {
         "name": "Last error"
+      },
+      "security_audit": {
+        "name": "Security audit"
       }
+    },
+    "select": {
+      "scanner_mode": {
+        "name": "Bluetooth scanner mode",
+        "state": {
+          "active": "Active",
+          "auto": "Auto",
+          "passive": "Passive",
+          "disabled": "Disabled"
+        }
+      },
+      "input_mode": {"name": "Input behaviour"},
+      "power_on_state": {"name": "Power-on state"}
     },
     "switch": {
       "provisioning": {
         "name": "Provisioning mode"
-      }
+      },
+      "bluetooth": {"name": "Bluetooth"},
+      "ble_rpc": {"name": "Bluetooth RPC"},
+      "cloud": {"name": "Shelly Cloud"},
+      "access_point": {"name": "Wi-Fi access point"},
+      "mqtt": {"name": "MQTT"},
+      "eco_mode": {"name": "Eco mode"},
+      "status_led": {"name": "Status LED"},
+      "debug_logging": {"name": "Debug logging"}
     }
   },
   "issues": {
@@ -353,6 +399,68 @@
           "name": "Replace",
           "description": "Replace the stored allowlist. When off, rows are merged by MAC."
         }
+      }
+    },
+    "secure_devices": {
+      "name": "Secure devices",
+      "description": "Apply the secure profile and read each checklist item back. Uses the device password stored in the options. The password is not logged.",
+      "fields": {
+        "device_id": {"name": "Devices", "description": "Core Shelly devices to secure."},
+        "area_id": {"name": "Areas", "description": "Secure every core Shelly device in these areas."},
+        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "mac": {"name": "MAC address", "description": "Optional device MAC."},
+        "all_shelly": {"name": "All Shelly devices", "description": "Secure every core Shelly config entry."},
+        "rotate_password": {"name": "Set or rotate password", "description": "Shelly.SetAuth with the stored device password."},
+        "disable_cloud": {"name": "Disable cloud", "description": "Turn off the Shelly Cloud connection."},
+        "disable_ap": {"name": "Disable access point", "description": "Turn off the device Wi-Fi access point."},
+        "disable_ble_rpc": {"name": "Disable Bluetooth RPC", "description": "Keep Bluetooth enabled for the scanner."},
+        "disable_mqtt": {"name": "Disable MQTT", "description": "Turn off outbound MQTT when the component exists."},
+        "disable_ws": {"name": "Disable outbound websocket", "description": "Turn off the outbound websocket client."},
+        "disable_debug": {"name": "Disable debug logging", "description": "Turn off MQTT, websocket, file, and UDP debug logs."},
+        "firmware_manual": {"name": "Manual firmware", "description": "Do not call Shelly.Update. There is no documented auto-update switch."},
+        "restrict_web_ui": {"name": "Restrict web UI", "description": "Stop mDNS discovery. Authentication still guards the web UI."}
+      }
+    },
+    "audit_security": {
+      "name": "Audit security",
+      "description": "Read each device's security state without changing it. Updates the Security audit sensor.",
+      "fields": {
+        "device_id": {"name": "Devices", "description": "Core Shelly devices to read. Omit, with no area or MAC, to audit every Shelly."},
+        "area_id": {"name": "Areas", "description": "Audit every core Shelly device in these areas."},
+        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "mac": {"name": "MAC address", "description": "Optional device MAC."},
+        "all_shelly": {"name": "All Shelly devices", "description": "Audit every core Shelly config entry."}
+      }
+    },
+    "set_advanced": {
+      "name": "Set advanced setting",
+      "description": "Change documented Gen2+ settings and read each one back. Models without the component are skipped.",
+      "fields": {
+        "device_id": {"name": "Devices", "description": "Core Shelly devices to update."},
+        "area_id": {"name": "Areas", "description": "Update every core Shelly device in these areas."},
+        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "mac": {"name": "MAC address", "description": "Optional device MAC."},
+        "all_shelly": {"name": "All Shelly devices", "description": "Update every core Shelly config entry."},
+        "channel": {"name": "Channel", "description": "Input or output index. Defaults to 0."},
+        "bluetooth": {"name": "Bluetooth", "description": "BLE.SetConfig enable. RPC is left as it is."},
+        "ble_rpc": {"name": "Bluetooth RPC", "description": "BLE rpc.enable. Bluetooth enable is left as it is."},
+        "scanner_mode": {"name": "Scanner mode", "description": "Core Shelly ble_scanner_mode: active, auto, passive, or disabled."},
+        "cloud": {"name": "Cloud", "description": "Cloud.SetConfig enable."},
+        "access_point": {"name": "Access point", "description": "WiFi.SetConfig ap.enable."},
+        "mqtt": {"name": "MQTT", "description": "MQTT.SetConfig enable, when the component exists."},
+        "eco_mode": {"name": "Eco mode", "description": "Sys device.eco_mode."},
+        "status_led": {"name": "Status LED", "description": "PLUGS_UI or POWERSTRIP_UI leds.mode."},
+        "debug_logging": {"name": "Debug logging", "description": "Sys debug sinks. Off clears them. On enables websocket debug only."},
+        "input_type": {"name": "Input type", "description": "switch or button."},
+        "input_mode": {"name": "Input behaviour", "description": "Output in_mode, including detached."},
+        "power_on_state": {"name": "Power-on state", "description": "initial_state for the output."},
+        "auto_on": {"name": "Auto on", "description": "Enable the auto-on timer."},
+        "auto_off": {"name": "Auto off", "description": "Enable the auto-off timer."},
+        "auto_on_delay": {"name": "Auto on delay", "description": "Seconds."},
+        "auto_off_delay": {"name": "Auto off delay", "description": "Seconds."},
+        "fade_rate": {"name": "Fade rate", "description": "button_fade_rate from 1 to 5."},
+        "transition_duration": {"name": "Transition duration", "description": "Seconds from 0% to 100%."},
+        "device_name": {"name": "Device name", "description": "Sys device.name on the Shelly."}
       }
     }
   }
