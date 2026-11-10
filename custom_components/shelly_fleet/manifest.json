@@ -1,0 +1,13 @@
+{
+  "domain": "shelly_fleet",
+  "name": "Shelly Fleet",
+  "after_dependencies": ["shelly", "bluetooth"],
+  "codeowners": ["@ianda-tech"],
+  "config_flow": true,
+  "documentation": "https://github.com/ianda-tech/shelly-hass",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/ianda-tech/shelly-hass/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

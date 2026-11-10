@@ -1,0 +1,22 @@
+{
+  "entity": {
+    "sensor": {
+      "adopted": {"default": "mdi:check-network"},
+      "pending": {"default": "mdi:progress-clock"},
+      "failed": {"default": "mdi:close-network"},
+      "last_error": {"default": "mdi:alert-outline"}
+    },
+    "switch": {
+      "provisioning": {"default": "mdi:bluetooth-connect"}
+    }
+  },
+  "services": {
+    "apply_profile": {"service": "mdi:cog-transfer"},
+    "set_input_mode": {"service": "mdi:gesture-tap-button"},
+    "set_dimmer_fade": {"service": "mdi:brightness-percent"},
+    "start_provisioning": {"service": "mdi:bluetooth-connect"},
+    "stop_provisioning": {"service": "mdi:bluetooth-off"},
+    "export_report": {"service": "mdi:file-export"},
+    "import_allowlist": {"service": "mdi:file-import"}
+  }
+}

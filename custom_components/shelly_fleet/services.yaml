@@ -1,0 +1,144 @@
+apply_profile:
+  target:
+    device:
+      integration: shelly
+  fields:
+    site:
+      selector:
+        text:
+    mac:
+      selector:
+        text:
+    all_shelly:
+      selector:
+        boolean:
+    model_contains:
+      selector:
+        text:
+
+set_input_mode:
+  target:
+    device:
+      integration: shelly
+  fields:
+    site:
+      selector:
+        text:
+    mac:
+      selector:
+        text:
+    input_id:
+      selector:
+        number:
+          min: 0
+          max: 7
+          mode: box
+    input_type:
+      selector:
+        select:
+          options:
+            - switch
+            - button
+    input_mode:
+      selector:
+        select:
+          options:
+            - follow
+            - flip
+            - momentary
+            - detached
+            - activate
+            - dim
+            - dual_dim
+    invert:
+      selector:
+        boolean:
+
+set_dimmer_fade:
+  target:
+    device:
+      integration: shelly
+  fields:
+    site:
+      selector:
+        text:
+    mac:
+      selector:
+        text:
+    channel:
+      selector:
+        number:
+          min: 0
+          max: 7
+          mode: box
+    fade_rate:
+      selector:
+        number:
+          min: 1
+          max: 5
+          mode: box
+    transition_duration:
+      selector:
+        number:
+          min: 0
+          max: 10800
+          step: 0.5
+          mode: box
+    transition_up:
+      selector:
+        number:
+          min: 0
+          max: 10800
+          step: 0.5
+          mode: box
+    transition_down:
+      selector:
+        number:
+          min: 0
+          max: 10800
+          step: 0.5
+          mode: box
+
+start_provisioning:
+  fields:
+    site:
+      selector:
+        text:
+    provisioning_minutes:
+      selector:
+        number:
+          min: 1
+          max: 180
+          mode: box
+
+stop_provisioning:
+  fields:
+    site:
+      selector:
+        text:
+
+export_report:
+  fields:
+    site:
+      selector:
+        text:
+    format:
+      selector:
+        select:
+          options:
+            - csv
+            - json
+            - both
+
+import_allowlist:
+  fields:
+    site:
+      selector:
+        text:
+    filename:
+      required: true
+      selector:
+        text:
+    replace:
+      selector:
+        boolean:
