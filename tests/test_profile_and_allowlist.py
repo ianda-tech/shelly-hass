@@ -40,8 +40,14 @@ def test_english_translations_match_strings() -> None:
 
 
 def test_manifest_version_matches_constant() -> None:
-    manifest = (ROOT / "custom_components" / "shelly_bulk" / "manifest.json").read_text()
-    assert f'"version": "{VERSION}"' in manifest
+    manifest = json.loads((ROOT / "custom_components" / "shelly_bulk" / "manifest.json").read_text())
+    assert manifest["version"] == VERSION
+
+
+def test_readme_version_matches_manifest() -> None:
+    manifest = json.loads((ROOT / "custom_components" / "shelly_bulk" / "manifest.json").read_text())
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert f"Current version: {manifest['version']}" in readme
 
 
 def test_repository_has_no_shipped_site_data() -> None:

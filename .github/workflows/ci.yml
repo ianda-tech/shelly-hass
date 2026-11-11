@@ -39,5 +39,7 @@ jobs:
         run: pip install -r requirements_test.txt
       - name: English translations match strings.json
         run: diff -q custom_components/shelly_bulk/strings.json custom_components/shelly_bulk/translations/en.json
+      - name: README version matches manifest
+        run: python3 -c 'import json, pathlib, sys; version = json.loads(pathlib.Path("custom_components/shelly_bulk/manifest.json").read_text())["version"]; needle = f"Current version: {version}"; sys.exit(0 if needle in pathlib.Path("README.md").read_text(encoding="utf-8") else f"README.md must contain {needle!r}")'
       - name: Run tests
         run: pytest

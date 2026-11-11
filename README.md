@@ -4,8 +4,13 @@
 
 # Shelly Bulk
 
+[![Latest release](https://img.shields.io/github/v/release/ianda-tech/shelly-hass?display_name=tag&sort=semver&label=Latest%20release&style=for-the-badge&color=2ea44f)](https://github.com/ianda-tech/shelly-hass/releases/latest)
+[![Latest release](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fianda-tech%2Fshelly-hass%2Fmain%2Fcustom_components%2Fshelly_bulk%2Fmanifest.json&query=%24.version&prefix=v&label=Latest%20release&style=for-the-badge&color=2ea44f)](https://github.com/ianda-tech/shelly-hass/releases/latest)
+[![released](https://img.shields.io/github/release-date/ianda-tech/shelly-hass?label=released&style=for-the-badge)](https://github.com/ianda-tech/shelly-hass/releases/latest)
+
+**Current version: 0.2.2.** Bump this line in the same change as `version` in `custom_components/shelly_bulk/manifest.json`.
+
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
-[![GitHub release](https://img.shields.io/github/v/release/ianda-tech/shelly-hass)](https://github.com/ianda-tech/shelly-hass/releases)
 [![License: MIT](https://img.shields.io/github/license/ianda-tech/shelly-hass)](LICENSE)
 [![hassfest | validate | tests](https://img.shields.io/github/actions/workflow/status/ianda-tech/shelly-hass/ci.yml?branch=main&label=hassfest%20%7C%20validate%20%7C%20tests)](https://github.com/ianda-tech/shelly-hass/actions/workflows/ci.yml)
 [![Home Assistant 2025.12+](https://img.shields.io/badge/home%20assistant-2025.12%2B-blue.svg)](https://github.com/ianda-tech/shelly-hass/blob/main/hacs.json)
@@ -16,6 +21,30 @@
 Shelly Bulk (`shelly_bulk`) is a [HACS](https://hacs.xyz/) custom integration for installers who commission a lot of factory-new Shelly devices into [Home Assistant](https://www.home-assistant.io/). It sits **beside** the built-in Shelly integration. It does not replace it, and it does not speak a private provisioning protocol when Home Assistant already can.
 
 You enter every site value yourself, after install, on the Home Assistant instance that will own the devices: Wi-Fi name and password, the device login password, timezone, and the list of MAC addresses, names, and rooms. None of that is shipped in this repository.
+
+## Install or update to the latest
+
+The **Latest release** badges above go to the [latest GitHub release](https://github.com/ianda-tech/shelly-hass/releases/latest). The release badge reads the published tag. Until that tag exists, the second badge reads `version` from [`manifest.json` on main](https://github.com/ianda-tech/shelly-hass/blob/main/custom_components/shelly_bulk/manifest.json), so a version is still shown. The date badge is the release date.
+
+### HACS
+
+1. Use **Open HACS repository** above. It adds `ianda-tech/shelly-hass` as a custom integration repository.
+2. Open **Shelly Bulk** in HACS. Use the three-dot menu, choose **Redownload**, and pick the newest version.
+3. Restart Home Assistant.
+
+Updates also appear under **Settings → Updates**.
+
+### Manual
+
+1. Download the **Source code** zip from the [latest release](https://github.com/ianda-tech/shelly-hass/releases/latest).
+2. Copy `custom_components/shelly_bulk` into `/config/custom_components`, replacing the folder that is already there.
+3. Restart Home Assistant.
+
+The folder must contain `manifest.json`. Do not rename the domain.
+
+### Which version is installed
+
+**Settings → Devices & services → Shelly Bulk** shows the version on the integration card.
 
 ## What it does, and why
 
@@ -60,11 +89,11 @@ Profiles are sent with Gen2+ RPC (`Sys.SetConfig`, `WiFi.SetConfig`, `Cloud.SetC
 
 ## Quick install
 
-1. Use **Open HACS repository** above. It adds `ianda-tech/shelly-hass` as a custom integration repository. Download **Shelly Bulk** in HACS.
-2. Restart Home Assistant.
+1. Install or update with the steps in [Install or update to the latest](#install-or-update-to-the-latest).
+2. Restart Home Assistant if you have not already.
 3. Use **Add integration** above. The domain is `shelly_bulk`. Enter the site values on that instance. Nothing in this repository is pre-filled.
 
-HACS can offer a version only when this repository has a GitHub release. A push to `main` publishes a release named `v` plus the version in `custom_components/shelly_bulk/manifest.json`, when that tag does not already exist. The release notes are that version's section of `CHANGELOG.md`. The same workflow can be run by hand. HACS installs the files from the git tag.
+A push to `main` publishes a release named `v` plus the version in `manifest.json`, when that tag does not already exist. The release notes are that version's section of `CHANGELOG.md`. HACS installs the files from the git tag.
 
 The same buttons work only when you are on your own Home Assistant and My Home Assistant can reach it.
 
@@ -470,7 +499,7 @@ pip install -r requirements_test.txt
 pytest
 ```
 
-GitHub Actions runs hassfest, HACS validation, and pytest. Tests use Home Assistant's config-flow harness and a fake RPC session. They do not talk to hardware. If you change an RPC field, cite the Shelly component doc you checked (`https://shelly-api-docs.shelly.cloud/gen2/`) and say when a model refused it. Bump `manifest.json` and add a `CHANGELOG.md` section with the same version. The release workflow on `main` turns that section into the GitHub release HACS lists.
+GitHub Actions runs hassfest, HACS validation, and pytest. Tests use Home Assistant's config-flow harness and a fake RPC session. They do not talk to hardware. If you change an RPC field, cite the Shelly component doc you checked (`https://shelly-api-docs.shelly.cloud/gen2/`) and say when a model refused it. Bump `manifest.json`, the **Current version** line at the top of this README, and add a `CHANGELOG.md` section with the same version. The release workflow on `main` turns that section into the GitHub release HACS lists.
 
 Please don't add site defaults "to make the form easier". The config flow is supposed to be empty of SSID, password, and devices. Timezone may be suggested from the running Home Assistant instance. Examples such as `Australia/Melbourne` in the docs are format samples, not a default.
 
