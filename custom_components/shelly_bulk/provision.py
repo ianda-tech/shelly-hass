@@ -258,7 +258,8 @@ class Provisioner:
             try:
                 result = await self.hass.config_entries.flow.async_configure(flow_id, pending)
             except UnknownFlow:
-                break
+                self._stop_if_gone(mac)
+                return
             except Exception as err:  # noqa: BLE001
                 self.runtime.record(mac, "failed", f"Config flow error: {self.runtime.redact(str(err))}")
                 return
@@ -279,7 +280,8 @@ class Provisioner:
             if result_type in {"progress", "progress_done"} or step in _PROGRESS_STEPS:
                 progressed = await self._wait_until_step_changes(flow_id)
                 if progressed is None:
-                    break
+                    self._stop_if_gone(mac)
+                    return
                 step = progressed.get("step_id")
                 if step == "timeout":
                     self.runtime.record(
@@ -391,6 +393,26 @@ class Provisioner:
         text = message.rstrip()
         joiner = " " if text.endswith(".") else ". "
         return f"{text}{joiner}{POWER_CYCLE_HINT}"
+
+    def note_failed(self, mac: str) -> None:
+        """Do not drive this MAC again until Retry failed clears it."""
+        try:
+            self._done.add(normalize_mac(mac))
+        except ValueError:
+            return
+
+    def note_failed_many(self, failures: dict) -> None:
+        for mac in failures:
+            self.note_failed(str(mac))
+
+    def _stop_if_gone(self, mac: str) -> None:
+        """The discovery flow disappeared, so the device is no longer advertising."""
+        self.note_failed(mac)
+        self.runtime.record(
+            mac,
+            "failed",
+            "The device is no longer advertising, so provisioning stopped.",
+        )
 
     def release_for_retry(self, macs: set[str]) -> None:
         """Forget failed MACs so the next advertisement can provision them again."""

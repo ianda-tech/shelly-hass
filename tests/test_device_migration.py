@@ -66,7 +66,7 @@ async def test_stale_devices_move_onto_one_companion_and_core_shelly_stays(hass)
 
     assert await async_migrate_entry(hass, bulk)
 
-    assert bulk.minor_version == 3
+    assert bulk.minor_version == 4
     assert devices.async_get(old.id) is None
     assert devices.async_get(empty.id) is None
     kept_core = devices.async_get(core.id)
@@ -111,3 +111,69 @@ async def test_companion_identifier_does_not_change_with_ip(hass) -> None:
     assert first["identifiers"] == second["identifiers"] == {(DOMAIN, f"companion_{shelly.entry_id}")}
     assert "connections" not in first
     assert "connections" not in second
+
+
+async def test_orphan_companion_moves_when_the_mac_sensor_matches(hass) -> None:
+    bulk = _entry()
+    bulk.add_to_hass(hass)
+    hass.config_entries.async_update_entry(bulk, minor_version=3)
+    shelly = MockConfigEntry(
+        domain="shelly",
+        unique_id="48F6EEBA6EFC",
+        title="Porch",
+        data={CONF_HOST: "192.0.2.10", CONF_PORT: 80, "model": "S3SW-001P8EU"},
+    )
+    shelly.add_to_hass(hass)
+    devices = dr.async_get(hass)
+    orphan = devices.async_get_or_create(
+        config_entry_id=bulk.entry_id,
+        identifiers={(DOMAIN, "companion_01M74D6D0ERMHSMQHENRHR1ZF8")},
+        name="Cheviot",
+    )
+    entities = er.async_get(hass)
+    mac_entity = entities.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        "01M74D6D0ERMHSMQHENRHR1ZF8_mac_address",
+        config_entry=bulk,
+        device_id=orphan.id,
+    )
+    hass.states.async_set(mac_entity.entity_id, "48:F6:EE:BA:6E:FC")
+    select_entity = entities.async_get_or_create(
+        "select",
+        DOMAIN,
+        "01M74D6D0ERMHSMQHENRHR1ZF8_power_on_state",
+        config_entry=bulk,
+        device_id=orphan.id,
+    )
+    assert await async_migrate_entry(hass, bulk)
+    assert devices.async_get(orphan.id) is None
+    companion = device_by_identifier(devices, (DOMAIN, f"companion_{shelly.entry_id}"), bulk.entry_id)
+    assert companion is not None
+    assert entities.async_get(mac_entity.entity_id).device_id == companion.id
+    assert entities.async_get(select_entity.entity_id).device_id == companion.id
+
+
+async def test_orphan_companion_without_a_mac_is_removed(hass) -> None:
+    bulk = _entry()
+    bulk.add_to_hass(hass)
+    hass.config_entries.async_update_entry(bulk, minor_version=3)
+    devices = dr.async_get(hass)
+    orphan = devices.async_get_or_create(
+        config_entry_id=bulk.entry_id,
+        identifiers={(DOMAIN, "companion_01M74D6D0ERMHSMQHENRHR1ZF8")},
+        name="Cheviot",
+    )
+    entities = er.async_get(hass)
+    mac_entity = entities.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        "01M74D6D0ERMHSMQHENRHR1ZF8_mac_address",
+        config_entry=bulk,
+        device_id=orphan.id,
+    )
+    hass.states.async_set(mac_entity.entity_id, "unavailable")
+    assert await async_migrate_entry(hass, bulk)
+    assert devices.async_get(orphan.id) is None
+    assert entities.async_get(mac_entity.entity_id) is None
+    assert await async_remove_config_entry_device(hass, bulk, orphan) is True

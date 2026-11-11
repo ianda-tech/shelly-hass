@@ -66,8 +66,14 @@ class PendingSensor(_CountSensor):
 
 
 class FailedSensor(_CountSensor):
+    """How many unique MACs last failed, with the reason and time of each."""
+
     def __init__(self, runtime: FleetRuntime) -> None:
         super().__init__(runtime, "failed", "failed")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[dict[str, str]]]:
+        return {"devices": self.runtime.failed_devices()}
 
 
 class HotspotScanSensor(FleetEntity, SensorEntity):

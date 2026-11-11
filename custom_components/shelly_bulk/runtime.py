@@ -100,6 +100,7 @@ class FleetRuntime:
         self.allowlist = Allowlist()
         self.adopted = 0
         self.failed = 0
+        self.failures: dict[str, dict[str, str]] = {}
         self.last_error = ""
         self.results: list[dict[str, Any]] = []
         self.last_audit: list[dict[str, Any]] = []
@@ -182,9 +183,11 @@ class FleetRuntime:
         stored = await self._store.async_load() or {}
         self.allowlist = Allowlist.from_dict(stored.get("allowlist"))
         self.adopted = int(stored.get("adopted") or 0)
-        self.failed = int(stored.get("failed") or 0)
         self.last_error = str(stored.get("last_error") or "")
         self.results = list(stored.get("results") or [])
+        self.failures = _failures_from_storage(stored, self.results)
+        self.failed = len(self.failures)
+        self.provisioner.note_failed_many(self.failures)
         raw_overrides = stored.get("output_overrides") or {}
         if isinstance(raw_overrides, dict):
             self._output_overrides = {
@@ -213,6 +216,7 @@ class FleetRuntime:
             "allowlist": self.allowlist.to_dict(),
             "adopted": self.adopted,
             "failed": self.failed,
+            "failures": list(self.failures.values()),
             "last_error": self.last_error,
             "results": self.results[-MAX_STORED_RESULTS:],
             "output_overrides": self._output_overrides,
@@ -232,7 +236,26 @@ class FleetRuntime:
         row.update({key: value for key, value in extra.items() if key not in {"password", "ssid", "ha1"}})
         if row.get("ip") and not row.get("host"):
             row["host"] = row["ip"]
-        self.results.append(row)
+        if status == "failed" and count and _is_mac(mac):
+            key = _failed_key(mac)
+            self.failures[key] = {
+                "mac": row["mac"],
+                "reason": safe_error,
+                "at": row["at"],
+            }
+            self.failed = len(self.failures)
+            self.last_error = safe_error[:255]
+            self.provisioner.note_failed(key)
+            self.results = [item for item in self.results if not _same_failed(item, key)]
+            self.results.append(row)
+        else:
+            self.results.append(row)
+            if status == "ok" and count and _is_mac(mac):
+                key = _failed_key(mac)
+                if key in self.failures:
+                    self.failures.pop(key, None)
+                    self.failed = len(self.failures)
+                    self.results = [item for item in self.results if not _same_failed(item, key)]
         self.results = self.results[-MAX_STORED_RESULTS:]
         if not count:
             self.notify()
@@ -242,7 +265,7 @@ class FleetRuntime:
         if status == "ok":
             self.adopted += 1
             async_delete_issue(self.hass, DOMAIN, f"ble_window_{_mac_key(mac)}")
-        elif status == "failed":
+        elif status == "failed" and not _is_mac(mac):
             self.failed += 1
             self.last_error = safe_error[:255]
         elif status == "skipped_auth":
@@ -250,6 +273,10 @@ class FleetRuntime:
         self.notify()
         self._store.async_delay_save(self._store_data, 1)
         _LOGGER.info("Shelly %s: %s %s", row["mac"], status, safe_error)
+
+    def failed_devices(self) -> list[dict[str, str]]:
+        """Unique failed MACs, newest attempt last."""
+        return sorted(self.failures.values(), key=lambda item: item.get("at") or "")
 
     def shelly_entry_for(self, mac: str) -> ConfigEntry | None:
         try:
@@ -313,6 +340,7 @@ class FleetRuntime:
                 macs.append(plain)
                 async_delete_issue(self.hass, DOMAIN, f"ble_window_{_mac_key(plain)}")
         self.results = kept
+        self.failures.clear()
         self.failed = 0
         if kept:
             self.last_error = str(kept[-1].get("error") or "")[:255]
@@ -1970,6 +1998,47 @@ class FleetRuntime:
             if entry.state in {ConfigEntryState.LOADED, ConfigEntryState.SETUP_ERROR}:
                 return
             await asyncio.sleep(0.5)
+
+
+def _failed_key(mac: str) -> str:
+    try:
+        return normalize_mac(mac)
+    except ValueError:
+        return mac
+
+
+def _same_failed(row: dict, key: str) -> bool:
+    if row.get("status") != "failed":
+        return False
+    return _failed_key(str(row.get("mac") or "")) == key
+
+
+def _failures_from_storage(stored: dict, results: list[dict]) -> dict[str, dict[str, str]]:
+    """Restore one failure per MAC. Older installs stored a row per attempt."""
+    failures: dict[str, dict[str, str]] = {}
+    saved = stored.get("failures")
+    if isinstance(saved, list):
+        for item in saved:
+            if not isinstance(item, dict) or not item.get("mac"):
+                continue
+            failures[_failed_key(str(item["mac"]))] = {
+                "mac": str(item.get("mac")),
+                "reason": str(item.get("reason") or ""),
+                "at": str(item.get("at") or ""),
+            }
+        return failures
+    for row in results:
+        if row.get("status") != "failed" or not row.get("mac"):
+            continue
+        if row.get("counted") is False:
+            continue
+        key = _failed_key(str(row["mac"]))
+        failures[key] = {
+            "mac": str(row["mac"]),
+            "reason": str(row.get("error") or ""),
+            "at": str(row.get("at") or ""),
+        }
+    return failures
 
 
 def _mac_key(value: str) -> str:
