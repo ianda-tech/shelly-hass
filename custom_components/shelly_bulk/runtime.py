@@ -117,6 +117,8 @@ class FleetRuntime:
         # Entity setup used to open one RPC session per control at the same time.
         # A Shelly reboots when that many sessions arrive together.
         self._rpc_limit = asyncio.Semaphore(3)
+        self.hotspot_found: list[dict[str, Any]] = []
+        self._hotspot_lock = asyncio.Lock()
         _LOGGER.addFilter(self._log_filter)
 
     @property
@@ -517,6 +519,149 @@ class FleetRuntime:
             await self.provisioner.scan_once()
         self._notify_find(listed, adopt=adopt)
         return listed
+
+    def _adopted_macs(self) -> set[str]:
+        found: set[str] = set()
+        for entry in self.hass.config_entries.async_entries(SHELLY_DOMAIN):
+            if not entry.unique_id:
+                continue
+            try:
+                found.add(normalize_mac(str(entry.unique_id)))
+            except ValueError:
+                continue
+        return found
+
+    async def _hotspot_session(self, dry_run: bool):
+        from .hotspot import HotspotSession, open_supervisor_network
+
+        network = await open_supervisor_network(self.hass)
+        data = self.entry.data
+        return HotspotSession(
+            network,
+            site_ssid=str(data.get(CONF_WIFI_SSID) or ""),
+            site_password=str(data.get(CONF_WIFI_PASSWORD) or ""),
+            disable_ap=bool(self.entry.options.get(CONF_DISABLE_AP, True)),
+            fleet_password=str(data.get(CONF_FLEET_PASSWORD) or ""),
+            dry_run=dry_run,
+            wait_for_lan=self._wait_hotspot_on_lan,
+            auth_params=build_set_auth,
+        )
+
+    async def _wait_hotspot_on_lan(self, macs: list[str]):
+        from .hotspot import LAN_WAIT_SECONDS
+
+        deadline = asyncio.get_running_loop().time() + LAN_WAIT_SECONDS
+        while asyncio.get_running_loop().time() < deadline:
+            for mac in macs:
+                entry = self.shelly_entry_for(mac)
+                if entry is not None:
+                    return entry
+            await asyncio.sleep(1)
+        return None
+
+    async def scan_hotspots(self) -> list[dict[str, Any]]:
+        """List Shelly setup access points. This does not join one."""
+        if self._hotspot_lock.locked():
+            raise ServiceValidationError("A hotspot provision is already running.")
+        try:
+            async with self._hotspot_lock:
+                return await self._scan_hotspots()
+        except Exception as err:
+            self._raise_hotspot(err)
+
+    async def _scan_hotspots(self) -> list[dict[str, Any]]:
+        session = await self._hotspot_session(dry_run=True)
+        found = await session.targets_from_scan(
+            allowlist=set(self.allowlist.devices),
+            adopted=self._adopted_macs(),
+            require_allowlist=self.require_allowlist,
+        )
+        self.hotspot_found = found
+        lines = []
+        for item in found:
+            state = "ready" if item["eligible"] else item["reason"]
+            lines.append(
+                f"{item['ssid']}  signal {item['signal']}  {display_mac(item['sta_mac'])}  {state}"
+            )
+        self._notify(
+            "Shelly setup hotspots",
+            "\n".join(lines) or "No Shelly setup access points were found.",
+            f"{DOMAIN}_hotspots",
+        )
+        self.notify()
+        adder = getattr(self, "add_hotspot_buttons", None)
+        if adder is not None:
+            adder([item for item in found if item["eligible"]])
+        return found
+
+    async def provision_hotspots(
+        self,
+        *,
+        mac: str | None = None,
+        all_found: bool = False,
+        dry_run: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Join setup APs one at a time, then put wlan0 back. end0 is not written."""
+        if self._hotspot_lock.locked():
+            raise ServiceValidationError("A hotspot provision is already running.")
+        try:
+            return await self._provision_hotspots(mac=mac, all_found=all_found, dry_run=dry_run)
+        except Exception as err:
+            self._raise_hotspot(err)
+
+    async def _provision_hotspots(
+        self,
+        *,
+        mac: str | None,
+        all_found: bool,
+        dry_run: bool,
+    ) -> list[dict[str, Any]]:
+        async with self._hotspot_lock:
+            if not self.hotspot_found or mac:
+                await self._scan_hotspots()
+            targets = list(self.hotspot_found)
+            if mac:
+                try:
+                    wanted = normalize_mac(mac)
+                except ValueError as err:
+                    raise ServiceValidationError("That is not a MAC address.") from err
+                targets = [
+                    item
+                    for item in targets
+                    if wanted in {item["sta_mac"], item["ble_mac"], item["bssid_mac"]}
+                ]
+                if not targets:
+                    raise ServiceValidationError(
+                        f"{display_mac(wanted)} was not in the hotspot scan."
+                    )
+            elif not all_found:
+                targets = [item for item in targets if item.get("eligible")]
+            session = await self._hotspot_session(dry_run=dry_run)
+            results = await session.provision_all(targets)
+            for row in results:
+                self.record(
+                    str(row["mac"]),
+                    str(row["status"]),
+                    str(row["error"]),
+                    count=row["status"] in {"ok", "failed"},
+                    step=row["step"],
+                    ip=row["ip"],
+                )
+                if row["status"] != "ok":
+                    continue
+                entry = self.shelly_entry_for(str(row["mac"]))
+                if entry is not None:
+                    await self._customise(entry, str(row["mac"]), provisioning=True)
+            self.notify()
+            return results
+
+    def _raise_hotspot(self, err: Exception) -> None:
+        from .hotspot import HotspotRefused
+
+        if isinstance(err, HotspotRefused):
+            self.set_last_error(err.reason)
+            raise ServiceValidationError(err.reason) from err
+        raise err
 
     async def set_auto_adopt(self, enabled: bool) -> None:
         options = dict(self.entry.options)

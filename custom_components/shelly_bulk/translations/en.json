@@ -365,6 +365,9 @@
       "failed": {
         "name": "Devices failed"
       },
+      "hotspot_scan": {
+        "name": "Setup hotspots"
+      },
       "last_error": {
         "name": "Last error"
       },
@@ -444,6 +447,9 @@
       "find_shelly": {"name": "Find my Shelly"},
       "reload_device_list": {"name": "Reload device list"},
       "retry_failed": {"name": "Retry failed"},
+      "scan_hotspots": {"name": "Scan for hotspots"},
+      "provision_hotspots": {"name": "Provision all via hotspot"},
+      "dry_run_hotspots": {"name": "Dry-run hotspot provision"},
       "identify": {"name": "Identify"}
     },
     "number": {
@@ -723,6 +729,23 @@
         "night_brightness": {"name": "Night brightness", "description": "Dimmers only."},
         "night_start": {"name": "Night start", "description": "HH:MM."},
         "night_end": {"name": "Night end", "description": "HH:MM."}
+      }
+    },
+    "scan_hotspots": {
+      "name": "Scan for hotspots",
+      "description": "Ask the Supervisor which Shelly setup access points wlan0 can see. This does not join a network or change end0.",
+      "fields": {
+        "site": {"name": "Site", "description": "Shelly Installer site name when more than one entry exists."}
+      }
+    },
+    "provision_hotspot": {
+      "name": "Provision via hotspot",
+      "description": "Join a Shelly setup access point on wlan0, send the site Wi-Fi, and restore wlan0. end0 is never changed. Use dry run to report the plan without joining.",
+      "fields": {
+        "site": {"name": "Site", "description": "Shelly Installer site name when more than one entry exists."},
+        "mac": {"name": "MAC", "description": "One Shelly from the hotspot scan. Leave empty to use the devices found by the last scan."},
+        "all": {"name": "All found hotspots", "description": "Provision every setup AP from the scan, one at a time."},
+        "dry_run": {"name": "Dry run", "description": "Report what would happen without joining an access point or changing wlan0."}
       }
     }
   }

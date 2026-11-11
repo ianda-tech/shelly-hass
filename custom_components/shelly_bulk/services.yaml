@@ -141,6 +141,27 @@ retry_failed:
       selector:
         text:
 
+scan_hotspots:
+  fields:
+    site:
+      selector:
+        text:
+
+provision_hotspot:
+  fields:
+    site:
+      selector:
+        text:
+    mac:
+      selector:
+        text:
+    all:
+      selector:
+        boolean:
+    dry_run:
+      selector:
+        boolean:
+
 export_report:
   fields:
     site:

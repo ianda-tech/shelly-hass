@@ -28,6 +28,7 @@ async def async_setup_entry(
         FailedSensor(runtime),
         LastErrorSensor(runtime),
         SecurityAuditSensor(runtime),
+        HotspotScanSensor(runtime),
     ]
     for shelly_entry in hass.config_entries.async_entries(SHELLY_DOMAIN):
         entities.append(ShellyMacSensor(runtime, shelly_entry))
@@ -66,6 +67,36 @@ class PendingSensor(_CountSensor):
 class FailedSensor(_CountSensor):
     def __init__(self, runtime: FleetRuntime) -> None:
         super().__init__(runtime, "failed", "failed")
+
+
+class HotspotScanSensor(FleetEntity, SensorEntity):
+    """How many Shelly setup access points the last scan found."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "hotspot_scan"
+    _attr_native_unit_of_measurement = "APs"
+
+    def __init__(self, runtime: FleetRuntime) -> None:
+        super().__init__(runtime, "hotspot_scan")
+
+    @property
+    def native_value(self) -> int:
+        return len(self.runtime.hotspot_found)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, list[dict[str, object]]]:
+        return {
+            "access_points": [
+                {
+                    "ssid": item.get("ssid"),
+                    "signal": item.get("signal"),
+                    "mac": item.get("sta_mac"),
+                    "eligible": item.get("eligible"),
+                    "reason": item.get("reason"),
+                }
+                for item in self.runtime.hotspot_found
+            ]
+        }
 
 
 class LastErrorSensor(FleetEntity, SensorEntity):

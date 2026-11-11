@@ -27,7 +27,9 @@ from .const import (
     SERVICE_AUDIT_SECURITY,
     SERVICE_BULK_SET,
     SERVICE_SET_ADVANCED,
+    SERVICE_PROVISION_HOTSPOT,
     SERVICE_RETRY_FAILED,
+    SERVICE_SCAN_HOTSPOTS,
     SERVICE_START_PROVISIONING,
     SERVICE_STOP_PROVISIONING,
 )
@@ -140,6 +142,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
             SERVICE_SET_ADVANCED,
             SERVICE_BULK_SET,
             SERVICE_RETRY_FAILED,
+            SERVICE_SCAN_HOTSPOTS,
+            SERVICE_PROVISION_HOTSPOT,
         ):
             hass.services.async_remove(DOMAIN, service)
     return unloaded
@@ -239,6 +243,28 @@ def _async_register_services(hass: HomeAssistant) -> None:
         SERVICE_RETRY_FAILED,
         _retry_failed,
         schema=vol.Schema({vol.Optional("site"): cv.string}, extra=vol.ALLOW_EXTRA),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SCAN_HOTSPOTS,
+        _scan_hotspots,
+        schema=vol.Schema({vol.Optional("site"): cv.string}, extra=vol.ALLOW_EXTRA),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_PROVISION_HOTSPOT,
+        _provision_hotspot,
+        schema=vol.Schema(
+            {
+                vol.Optional("site"): cv.string,
+                vol.Optional("mac"): cv.string,
+                vol.Optional("all"): cv.boolean,
+                vol.Optional("dry_run"): cv.boolean,
+            },
+            extra=vol.ALLOW_EXTRA,
+        ),
         supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
@@ -442,6 +468,24 @@ async def _retry_failed(call: ServiceCall) -> dict[str, Any] | None:
     macs = _runtime(call.hass, call).retry_failed()
     if call.return_response:
         return {"macs": macs, "count": len(macs)}
+    return None
+
+
+async def _scan_hotspots(call: ServiceCall) -> dict[str, Any] | None:
+    found = await _runtime(call.hass, call).scan_hotspots()
+    if call.return_response:
+        return {"count": len(found), "access_points": found}
+    return None
+
+
+async def _provision_hotspot(call: ServiceCall) -> dict[str, Any] | None:
+    results = await _runtime(call.hass, call).provision_hotspots(
+        mac=call.data.get("mac"),
+        all_found=bool(call.data.get("all")),
+        dry_run=bool(call.data.get("dry_run")),
+    )
+    if call.return_response:
+        return {"count": len(results), "results": results}
     return None
 
 

@@ -8,7 +8,7 @@
 [![Latest release](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fianda-tech%2Fshelly-hass%2Fmain%2Fcustom_components%2Fshelly_bulk%2Fmanifest.json&query=%24.version&prefix=v&label=Latest%20release&style=for-the-badge&color=2ea44f)](https://github.com/ianda-tech/shelly-hass/releases/latest)
 [![released](https://img.shields.io/github/release-date/ianda-tech/shelly-hass?label=released&style=for-the-badge)](https://github.com/ianda-tech/shelly-hass/releases/latest)
 
-**Current version: 0.3.0.** Bump this line in the same change as `version` in `custom_components/shelly_bulk/manifest.json`.
+**Current version: 0.3.1.** Bump this line in the same change as `version` in `custom_components/shelly_bulk/manifest.json`.
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![License: MIT](https://img.shields.io/github/license/ianda-tech/shelly-hass)](LICENSE)
@@ -189,6 +189,20 @@ Factory-new Gen2, Gen3, and Gen4 firmware (from about 1.7.5, and the tighter 2.x
 - if the window ends before the device gets online, it goes **locked** until you power-cycle it
 
 Shelly Installer raises a repair and sets the last-error sensor when an allowlisted device is advertising with Bluetooth RPC off. Power-cycle that device. Do not keep retrying a locked unit.
+
+### When the Bluetooth window has closed
+
+A Shelly whose setup window has expired still broadcasts an open Wi-Fi access point, for example `Shelly1PMMiniG3-48F6EEB96270`. The hex in that name is the Wi-Fi MAC. The AP BSSID is that MAC plus one, and the BLE MAC is that MAC plus two.
+
+**Scan for hotspots** asks the Supervisor which of those access points `wlan0` can see, and lists the name and signal. It does not join one. **Provision via hotspot** on a found device, or **Provision all via hotspot**, joins that access point on `wlan0` only, sends the site Wi-Fi to `http://192.168.33.1/rpc/WiFi.SetConfig` from the `wlan0` address, then puts `wlan0` back, including when the attempt fails or times out. Devices run one at a time. **Dry-run hotspot provision** prints the same plan and does not join.
+
+This path needs:
+
+- Home Assistant OS or Supervised, so the Supervisor network API is available. A container or core install without the Supervisor cannot do it.
+- A Wi-Fi adapter named `wlan0` that is not the primary or only interface. An onboard radio that is disabled is fine. The scan can still see the setup access points.
+- `end0` connected, primary, and holding the default route. Shelly Installer reads `end0` and refuses to start if that is not true. It never writes `end0`. If `end0` or the default route changes while `wlan0` is associated, it drops `wlan0` and stops.
+
+`shelly_bulk.scan_hotspots` and `shelly_bulk.provision_hotspot` are the same actions. `dry_run: true` reports the plan. `mac` picks one device. `all: true` is the batch.
 
 ### Walkthrough
 
