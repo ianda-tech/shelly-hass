@@ -4,6 +4,7 @@
 
 - Per-device controls add again on Home Assistant 2026.11. The companion device is registered with `via_device_id` before its entities are added, and the MAC is stored with the current device-registry calls. The old `via_device` argument made Home Assistant refuse the entity.
 - **Retry failed** clears the failed list and tries those devices again the next time they advertise. The same action is `shelly_bulk.retry_failed`. A failed result mentions a power-cycle only when that device is advertising without Bluetooth RPC.
+- Upgrade removes the extra devices left behind when companion devices were introduced. Before 0.2.6 those devices used `("shelly", <Shelly unique id or entry id>)` and had no name of their own, so Home Assistant showed the site name. The device that remains is `("shelly_bulk", "companion_<Shelly entry id>")`. Entities keep their entity id, a name you set, and a disabled state you set. A core Shelly device is not removed. A leftover device can also be deleted from the device page.
 
 ## 0.2.8
 

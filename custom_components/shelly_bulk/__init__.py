@@ -75,13 +75,32 @@ def _reenable_integration_disabled(hass: HomeAssistant, entry: ConfigEntry) -> N
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrate a config entry. Re-enabling runs once, before setup."""
+    """Migrate a config entry before setup. Each step runs once."""
     if entry.version > 1:
         return False
+    if entry.minor_version >= 3:
+        return True
     if entry.minor_version < 2:
         _reenable_integration_disabled(hass, entry)
-        hass.config_entries.async_update_entry(entry, minor_version=2)
+    if entry.minor_version < 3:
+        from .entity import retire_stale_devices
+
+        retire_stale_devices(hass, entry)
+    hass.config_entries.async_update_entry(entry, minor_version=3)
     return True
+
+
+async def async_remove_config_entry_device(hass: HomeAssistant, config_entry: ConfigEntry, device_entry) -> bool:
+    """Let a leftover device be deleted from the device page.
+
+    The Shelly Bulk hub and the current companion of a Shelly that is still
+    set up stay. Anything else linked to this entry can be removed.
+    """
+    from .const import SHELLY_DOMAIN
+    from .entity import _current_device
+
+    shelly_ids = {item.entry_id for item in hass.config_entries.async_entries(SHELLY_DOMAIN)}
+    return not _current_device(device_entry, config_entry, shelly_ids)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
