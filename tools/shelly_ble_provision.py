@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Optional workshop tool for pre-staging Shelly devices without the integration.
 
-UNTESTED ON REAL HARDWARE. Prefer the Shelly Bulk integration when Home
+UNTESTED ON REAL HARDWARE. Prefer the Shelly Installer integration when Home
 Assistant can hear the devices. This script is for a bench laptop or Pi that
 is not on the site instance.
 

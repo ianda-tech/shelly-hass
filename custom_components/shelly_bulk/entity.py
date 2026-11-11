@@ -26,9 +26,9 @@ class FleetEntity(Entity):
         self._attr_unique_id = f"{entry.entry_id}_{unique_suffix}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name=f"Shelly Bulk ({runtime.site_name})",
+            name=f"Shelly Installer ({runtime.site_name})",
             manufacturer=MANUFACTURER,
-            model="Shelly Bulk",
+            model="Shelly Installer",
             sw_version=VERSION,
         )
 
@@ -41,8 +41,159 @@ class FleetEntity(Entity):
 
 
 def companion_identifier(entry) -> tuple[str, str]:
-    """Stable id for the Shelly Bulk device that belongs to one core Shelly."""
+    """Stable id for the Shelly Bulk device that belongs to one core Shelly.
+
+    This id is the Shelly config entry id. It does not include the IP or the
+    device name, so a new address does not create a second device.
+    """
     return (DOMAIN, f"companion_{entry.entry_id}")
+
+
+def _current_device(device, bulk_entry, shelly_ids: set[str]) -> bool:
+    """True for the Shelly Bulk hub or a companion of a Shelly that still exists."""
+    for domain, ident in device.identifiers:
+        if domain != DOMAIN:
+            continue
+        if ident == bulk_entry.entry_id:
+            return True
+        owner = ident.removeprefix("companion_")
+        if ident.startswith("companion_") and owner in shelly_ids:
+            return True
+    return False
+
+
+def _shelly_id_for_entity(unique_id: str, shelly_ids: set[str], bulk_entry_id: str) -> str | None:
+    """Return the Shelly entry id a Shelly Bulk entity belongs to, or None for the hub."""
+    matches = [shelly_id for shelly_id in shelly_ids if unique_id.startswith(f"{shelly_id}_")]
+    if matches:
+        return max(matches, key=len)
+    if unique_id.startswith(f"{bulk_entry_id}_"):
+        return None
+    return ""
+
+
+def _ensure_companion(hass, bulk_entry, shelly_entry) -> str:
+    """Return the current companion device id, creating it if this is the first time."""
+    from .groups import companion_device_name, friendly_model
+
+    registry = dr.async_get(hass)
+    existing = device_by_identifier(
+        registry, companion_identifier(shelly_entry), bulk_entry.entry_id
+    )
+    if existing is not None:
+        return existing.id
+    name_by_user, device_name, model, mac, ip = linked_shelly_names(hass, shelly_entry)
+    kwargs = {}
+    if ip:
+        kwargs["configuration_url"] = f"http://{ip}"
+    created = registry.async_get_or_create(
+        config_entry_id=bulk_entry.entry_id,
+        identifiers={companion_identifier(shelly_entry)},
+        name=companion_device_name(name_by_user, device_name, model, mac, ip),
+        manufacturer="Shelly",
+        model=friendly_model(model) or model or "Shelly",
+        **kwargs,
+    )
+    return created.id
+
+
+def _ensure_hub(hass, bulk_entry) -> str:
+    registry = dr.async_get(hass)
+    existing = device_by_identifier(registry, (DOMAIN, bulk_entry.entry_id), bulk_entry.entry_id)
+    if existing is not None:
+        return existing.id
+    created = registry.async_get_or_create(
+        config_entry_id=bulk_entry.entry_id,
+        identifiers={(DOMAIN, bulk_entry.entry_id)},
+        name=f"Shelly Installer ({bulk_entry.title})",
+        manufacturer=MANUFACTURER,
+        model="Shelly Installer",
+    )
+    return created.id
+
+
+def retire_stale_devices(hass, bulk_entry) -> None:
+    """Move entities onto the current companion device and drop leftover devices.
+
+    Before 0.2.6 a per-Shelly device was created with identifier
+    ``("shelly", <Shelly unique id or entry id>)`` and no name, so Home
+    Assistant titled it with this config entry. 0.2.6 added a second device,
+    ``("shelly_bulk", "companion_<Shelly entry id>")``. This keeps that second
+    device and removes the earlier one. A core Shelly device is left in place;
+    only this integration's link to it is removed.
+    """
+    from homeassistant.helpers import entity_registry as er
+
+    registry = dr.async_get(hass)
+    entities = er.async_get(hass)
+    shelly_entries = {
+        entry.entry_id: entry for entry in hass.config_entries.async_entries(SHELLY_DOMAIN)
+    }
+    shelly_ids = set(shelly_entries)
+    by_key = {}
+    for entry in shelly_entries.values():
+        by_key[entry.entry_id] = entry.entry_id
+        if entry.unique_id:
+            by_key[str(entry.unique_id)] = entry.entry_id
+    for device in list(dr.async_entries_for_config_entry(registry, bulk_entry.entry_id)):
+        if _current_device(device, bulk_entry, shelly_ids):
+            macs = {item for item in device.connections if item[0] == dr.CONNECTION_NETWORK_MAC}
+            if macs and any(ident.startswith("companion_") for _domain, ident in device.identifiers):
+                safe_device_update(
+                    registry,
+                    device.id,
+                    new_connections=set(device.connections) - macs,
+                )
+            continue
+        device_owner = ""
+        for domain, value in device.identifiers:
+            if domain == SHELLY_DOMAIN and value in by_key:
+                device_owner = by_key[value]
+                break
+        ours = [
+            entity
+            for entity in er.async_entries_for_device(entities, device.id, include_disabled_entities=True)
+            if entity.config_entry_id == bulk_entry.entry_id
+        ]
+        blocked = False
+        for entity in ours:
+            owner = _shelly_id_for_entity(entity.unique_id or "", shelly_ids, bulk_entry.entry_id)
+            if owner == "":
+                owner = device_owner or ""
+            if owner == "":
+                _LOGGER.warning(
+                    "Left %s on stale device %s; its Shelly could not be matched",
+                    entity.entity_id,
+                    sorted(device.identifiers),
+                )
+                blocked = True
+                continue
+            try:
+                if owner is None:
+                    target = _ensure_hub(hass, bulk_entry)
+                else:
+                    target = _ensure_companion(hass, bulk_entry, shelly_entries[owner])
+                if entity.device_id != target:
+                    entities.async_update_entity(entity.entity_id, device_id=target)
+            except Exception:
+                _LOGGER.exception("Could not move %s off stale device %s", entity.entity_id, device.id)
+                blocked = True
+        if blocked:
+            continue
+        # A device belongs to one config entry. This list is the devices this
+        # integration owns. A core Shelly device is not in the list, so it is
+        # not removed. remove_config_entry_id is gone on Home Assistant 2026.11.
+        if bulk_entry.entry_id not in device_config_entry_ids(device):
+            continue
+        try:
+            _LOGGER.info(
+                "Removing stale Shelly Installer device %s with identifiers %s",
+                device.name,
+                sorted(device.identifiers),
+            )
+            registry.async_remove_device(device.id)
+        except Exception:
+            _LOGGER.exception("Could not remove stale device %s", device.id)
 
 
 def core_shelly_device(hass, entry):

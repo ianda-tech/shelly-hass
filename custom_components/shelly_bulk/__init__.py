@@ -54,12 +54,12 @@ def _runtime(hass: HomeAssistant, call: ServiceCall) -> FleetRuntime:
         for runtime in runtimes.values():
             if runtime.site_name == site:
                 return runtime
-        raise ServiceValidationError(f"No Shelly Bulk entry named {site}")
+        raise ServiceValidationError(f"No Shelly Installer entry named {site}")
     if len(runtimes) == 1:
         return next(iter(runtimes.values()))
     if not runtimes:
-        raise ServiceValidationError("Shelly Bulk is not set up")
-    raise ServiceValidationError("More than one Shelly Bulk entry is set up; pass site")
+        raise ServiceValidationError("Shelly Installer is not set up")
+    raise ServiceValidationError("More than one Shelly Installer entry is set up; pass site")
 
 
 def _reenable_integration_disabled(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -75,13 +75,32 @@ def _reenable_integration_disabled(hass: HomeAssistant, entry: ConfigEntry) -> N
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrate a config entry. Re-enabling runs once, before setup."""
+    """Migrate a config entry before setup. Each step runs once."""
     if entry.version > 1:
         return False
+    if entry.minor_version >= 3:
+        return True
     if entry.minor_version < 2:
         _reenable_integration_disabled(hass, entry)
-        hass.config_entries.async_update_entry(entry, minor_version=2)
+    if entry.minor_version < 3:
+        from .entity import retire_stale_devices
+
+        retire_stale_devices(hass, entry)
+    hass.config_entries.async_update_entry(entry, minor_version=3)
     return True
+
+
+async def async_remove_config_entry_device(hass: HomeAssistant, config_entry: ConfigEntry, device_entry) -> bool:
+    """Let a leftover device be deleted from the device page.
+
+    The Shelly Bulk hub and the current companion of a Shelly that is still
+    set up stay. Anything else linked to this entry can be removed.
+    """
+    from .const import SHELLY_DOMAIN
+    from .entity import _current_device
+
+    shelly_ids = {item.entry_id for item in hass.config_entries.async_entries(SHELLY_DOMAIN)}
+    return not _current_device(device_entry, config_entry, shelly_ids)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
@@ -132,7 +151,7 @@ _RELOAD_GUARD: set[str] = set()
 async def _reload(hass: HomeAssistant, entry: CONFIG_ENTRY) -> None:
     """Reload once. A write during setup must not start another reload."""
     if entry.entry_id in _RELOAD_GUARD:
-        _LOGGER.warning("Skipped a recursive reload of Shelly Bulk")
+        _LOGGER.warning("Skipped a recursive reload of Shelly Installer")
         return
     _RELOAD_GUARD.add(entry.entry_id)
     try:

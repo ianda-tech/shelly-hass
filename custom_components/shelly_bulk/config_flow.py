@@ -27,10 +27,12 @@ from homeassistant.helpers.selector import (
 )
 
 from .device_settings import CHANNEL_KEYS, channel_updates
+from .device_type import CONSUMPTION_LABELS, CONSUMPTION_TYPES
 from .groups import confirmation_text, fields_for, model_options, room_options, select_cards, ticked_updates
 from .pairing import valid_initial_states
 from .security import SECURE_OPTION_DEFAULTS
 from .const import (
+    UNCHANGED,
     BLE_SCANNER_MODES,
     CONF_APPLY_DIMMER_PROFILE,
     CONF_APPLY_INPUT_PROFILE,
@@ -40,10 +42,12 @@ from .const import (
     CONF_AUTO_OFF_DELAY,
     CONF_AUTO_ON,
     CONF_AUTO_ON_DELAY,
+    CONF_BATCH_OUTPUT_TYPE,
     CONF_BLE_SCANNER_MODE,
     CONF_BUTTON_DIMMING,
     CONF_BUTTON_FADE_RATE,
     CONF_CONCURRENCY,
+    CONF_DEFAULT_OUTPUT_TYPE,
     CONF_DISABLE_AP,
     CONF_DISABLE_BLE_RPC,
     CONF_DISABLE_CLOUD,
@@ -114,6 +118,9 @@ _BEHAVIOUR_SCHEMA = vol.Schema(
         vol.Required(CONF_CONCURRENCY, default=2): _number(1, 5),
         vol.Required(CONF_RETRIES, default=1): _number(0, 3),
         vol.Required(CONF_PROVISIONING_MINUTES, default=30): _number(5, 180),
+        vol.Required(CONF_DEFAULT_OUTPUT_TYPE, default="light"): _choice(
+            [(name, CONSUMPTION_LABELS.get(name, name)) for name in CONSUMPTION_TYPES]
+        ),
     }
 )
 
@@ -133,6 +140,7 @@ def _behaviour_options(user_input: dict[str, Any]) -> dict[str, Any]:
         CONF_CONCURRENCY: int(user_input[CONF_CONCURRENCY]),
         CONF_RETRIES: int(user_input[CONF_RETRIES]),
         CONF_PROVISIONING_MINUTES: int(user_input[CONF_PROVISIONING_MINUTES]),
+        CONF_DEFAULT_OUTPUT_TYPE: str(user_input.get(CONF_DEFAULT_OUTPUT_TYPE) or "light"),
     }
 
 
@@ -140,7 +148,7 @@ class ShellyBulkConfigFlow(ConfigFlow, domain=DOMAIN):
     """Collect site Wi-Fi, the device password, and generic behaviour."""
 
     VERSION = 1
-    MINOR_VERSION = 2
+    MINOR_VERSION = 3
 
     def __init__(self) -> None:
         self._user: dict[str, Any] = {}
@@ -329,6 +337,8 @@ class ShellyBulkOptionsFlow(OptionsFlow):
         if user_input is not None:
             options = dict(self.config_entry.options)
             options[CONF_APPLY_OUTPUT_PROFILE] = bool(user_input[CONF_APPLY_OUTPUT_PROFILE])
+            chosen = str(user_input.get(CONF_DEFAULT_OUTPUT_TYPE) or options.get(CONF_DEFAULT_OUTPUT_TYPE) or "light")
+            options[CONF_DEFAULT_OUTPUT_TYPE] = chosen if chosen in CONSUMPTION_TYPES else "light"
             options[CONF_INITIAL_STATE] = user_input.get(CONF_INITIAL_STATE) or UNCHANGED
             options[CONF_AUTO_ON] = bool(user_input.get(CONF_AUTO_ON))
             options[CONF_AUTO_OFF] = bool(user_input.get(CONF_AUTO_OFF))
@@ -343,6 +353,9 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                     vol.Required(
                         CONF_APPLY_OUTPUT_PROFILE, default=bool(options.get(CONF_APPLY_OUTPUT_PROFILE, False))
                     ): BooleanSelector(),
+                    vol.Required(
+                        CONF_DEFAULT_OUTPUT_TYPE, default=str(options.get(CONF_DEFAULT_OUTPUT_TYPE) or "light")
+                    ): _choice([(name, CONSUMPTION_LABELS.get(name, name)) for name in CONSUMPTION_TYPES]),
                     vol.Required(
                         CONF_INITIAL_STATE, default=options.get(CONF_INITIAL_STATE, UNCHANGED)
                     ): _choice(
@@ -444,6 +457,8 @@ class ShellyBulkOptionsFlow(OptionsFlow):
             updated[CONF_CONCURRENCY] = int(user_input[CONF_CONCURRENCY])
             updated[CONF_RETRIES] = int(user_input[CONF_RETRIES])
             updated[CONF_PROVISIONING_MINUTES] = int(user_input[CONF_PROVISIONING_MINUTES])
+            batch = str(user_input.get(CONF_BATCH_OUTPUT_TYPE) or "").strip().lower()
+            updated[CONF_BATCH_OUTPUT_TYPE] = batch if batch in CONSUMPTION_TYPES else ""
             return self.async_create_entry(data=updated)
         return self.async_show_form(
             step_id="provisioning",
@@ -473,6 +488,10 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                     vol.Required(
                         CONF_PROVISIONING_MINUTES, default=int(options.get(CONF_PROVISIONING_MINUTES, 30))
                     ): _number(5, 180),
+                    vol.Required(
+                        CONF_BATCH_OUTPUT_TYPE,
+                        default=str(options.get(CONF_BATCH_OUTPUT_TYPE) or options.get(CONF_DEFAULT_OUTPUT_TYPE) or "light"),
+                    ): _choice([(name, CONSUMPTION_LABELS.get(name, name)) for name in CONSUMPTION_TYPES]),
                 }
             ),
         )
@@ -543,13 +562,23 @@ class ShellyBulkOptionsFlow(OptionsFlow):
             except ValueError:
                 errors["mac"] = "invalid_mac"
             else:
+                profile = str(user_input.get("profile") or UNCHANGED)
                 added = await runtime.add_listed_device(
-                    mac, str(user_input.get("name") or ""), str(user_input.get("room") or "")
+                    mac,
+                    str(user_input.get("name") or ""),
+                    str(user_input.get("room") or ""),
+                    output_type=str(user_input.get("output_type") or runtime.site_default_output()),
+                    output_type_2=str(user_input.get("output_type_2") or runtime.site_default_output()),
+                    profile="" if profile == UNCHANGED else profile,
                 )
                 if not added:
                     errors["mac"] = "already_listed"
                 else:
                     return self.async_create_entry(data=dict(self.config_entry.options))
+        runtime = self._fleet()
+        default_output = runtime.site_default_output() if runtime is not None else "light"
+        from .device_type import PROFILE_CHOICES
+
         return self.async_show_form(
             step_id="add_device",
             data_schema=vol.Schema(
@@ -557,6 +586,16 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                     vol.Required("mac"): TextSelector(),
                     vol.Optional("name", default=""): TextSelector(),
                     vol.Optional("room", default=""): TextSelector(),
+                    vol.Required("output_type", default=default_output): _choice(
+                        [(name, CONSUMPTION_LABELS.get(name, name)) for name in CONSUMPTION_TYPES]
+                    ),
+                    vol.Required("output_type_2", default=default_output): _choice(
+                        [(name, CONSUMPTION_LABELS.get(name, name)) for name in CONSUMPTION_TYPES]
+                    ),
+                    vol.Required("profile", default=UNCHANGED): _choice(
+                        [(UNCHANGED, "Don't set")]
+                        + [(name, name) for name in PROFILE_CHOICES]
+                    ),
                 }
             ),
             errors=errors,
@@ -641,6 +680,59 @@ class ShellyBulkOptionsFlow(OptionsFlow):
         self._bulk_purpose = "copy"
         self._bulk_updates = dict(getattr(self, "_saved_channel", {}) or {})
         return await self._group_step("copy_settings", user_input, include_none=True)
+
+    async def async_step_device_type(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Choose devices, then a consumption type and an optional profile."""
+        self._bulk_purpose = "device_type"
+        return await self._group_step("device_type", user_input, include_none=False)
+
+    async def async_step_device_type_form(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        runtime = self._fleet()
+        if runtime is None:
+            return self.async_abort(reason="not_loaded")
+        if not hasattr(self, "_device_type_profiles"):
+            summary = await runtime.describe_device_types([card.entry_id for card in self._bulk_chosen])
+            self._device_type_profiles = list(summary.get("profiles") or [])
+        profiles = self._device_type_profiles
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            consumption = str(user_input.get("consumption_type") or UNCHANGED)
+            profile = str(user_input.get("profile") or UNCHANGED)
+            confirm = bool(user_input.get("confirm_profile_reboot"))
+            set_default = bool(user_input.get("set_site_default"))
+            if profile != UNCHANGED and not confirm:
+                errors["confirm_profile_reboot"] = "confirm_profile"
+            elif not set_default and consumption == UNCHANGED and profile == UNCHANGED:
+                return self.async_abort(reason="nothing_selected")
+            else:
+                runtime.start_device_type(
+                    [card.entry_id for card in self._bulk_chosen],
+                    consumption=None if set_default or consumption == UNCHANGED else consumption,
+                    profile=None if profile == UNCHANGED else profile,
+                    confirm_reboot=confirm,
+                    apply_site_default=set_default,
+                )
+                return self.async_abort(
+                    reason="device_type_started",
+                    description_placeholders={"count": str(len(self._bulk_chosen))},
+                )
+        consumption_options = [(UNCHANGED, "Leave unchanged")]
+        consumption_options.extend((name, CONSUMPTION_LABELS.get(name, name)) for name in CONSUMPTION_TYPES)
+        profile_options = [(UNCHANGED, "Leave unchanged")]
+        profile_options.extend((name, name) for name in profiles)
+        return self.async_show_form(
+            step_id="device_type_form",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("consumption_type", default=UNCHANGED): _choice(consumption_options),
+                    vol.Required("profile", default=UNCHANGED): _choice(profile_options),
+                    vol.Required("confirm_profile_reboot", default=False): BooleanSelector(),
+                    vol.Required("set_site_default", default=False): BooleanSelector(),
+                }
+            ),
+            errors=errors,
+            description_placeholders={"count": str(len(self._bulk_chosen))},
+        )
 
     async def async_step_bulk_change(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Start a bulk change. The device work happens after the form closes."""
@@ -727,6 +819,8 @@ class ShellyBulkOptionsFlow(OptionsFlow):
         self._bulk_chosen = chosen
         if not chosen:
             return self.async_abort(reason="no_devices")
+        if self._bulk_purpose == "device_type":
+            return await self.async_step_device_type_form()
         return await self.async_step_bulk_confirm()
 
     async def async_step_bulk_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

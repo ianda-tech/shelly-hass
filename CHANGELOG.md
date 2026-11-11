@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- Upgrade removes the extra devices left behind when companion devices were introduced. Before 0.2.6 those devices used `("shelly", <Shelly unique id or entry id>)` and had no name of their own, so Home Assistant showed the site name. The device that remains is `("shelly_bulk", "companion_<Shelly entry id>")`. Entities keep their entity id, a name you set, and a disabled state you set. A core Shelly device is not removed. A leftover device can also be deleted from the device page.
+- The integration is shown as Shelly Installer. The domain stays `shelly_bulk`, and existing entity ids are unchanged.
+- Each switch channel has a consumption type select (switch, light, fan, socket, and the other values Shelly stores). It is written only when the value differs, and it does not reboot the device. Home Assistant shows the channel as a light when the type is light.
+- The site default output type is light. Adoption and profile apply set every switch channel to that default unless you have chosen a different type for that channel. Configure → Device type can set already-added Shellies, including ones that were in Home Assistant first, to the site default in one step. The core Shelly entry is reloaded afterwards so the light entities appear. The device is not rebooted.
+- Add device asks for an output type on each channel, pre-filled with the site default, and a profile. The profile is applied before the name when the device lists it, and the device restarts once. Auto-adopt and Find my Shelly use one batch output type. The choice is stored on the device, including optional `output_type`, `output_type_2`, and `profile` columns in `devices.csv`, and is treated as a user override afterwards.
+- Configure → Device type can set that consumption type for a group, and can change the device profile (switch or cover, or whatever Shelly.ListProfiles returns) only after you tick the reboot box. Profiles run one device at a time. The device reboots itself. The core Shelly entry is reloaded afterwards. No other action reboots a device.
+
 ## 0.2.9
 
 - Per-device controls add again on Home Assistant 2026.11. The companion device is registered with `via_device_id` before its entities are added, and the MAC is stored with the current device-registry calls. The old `via_device` argument made Home Assistant refuse the entity.

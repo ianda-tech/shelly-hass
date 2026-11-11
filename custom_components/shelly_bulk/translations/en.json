@@ -12,10 +12,10 @@
           "timezone": "Timezone"
         },
         "data_description": {
-          "site_name": "A label for this Shelly Bulk entry, shown in Home Assistant.",
+          "site_name": "A label for this Shelly Installer entry, shown in Home Assistant.",
           "wifi_ssid": "2.4 GHz network. WPA3-only and 5 GHz-only networks will not join.",
           "wifi_password": "Stored on this config entry. It is not written to logs or diagnostics.",
-          "fleet_password": "Password for the Shelly local web page and API. Username is always admin. Shelly Bulk saves it into the Shelly integration so Home Assistant stays connected. Leave blank for no login.",
+          "fleet_password": "Password for the Shelly local web page and API. Username is always admin. Shelly Installer saves it into the Shelly integration so Home Assistant stays connected. Leave blank for no login.",
           "timezone": "Optional. An IANA tz database name, case-sensitive, Region/City, for example Australia/Melbourne, Australia/Sydney, or Europe/London. Abbreviations such as AEDT and offsets such as UTC+11 are not accepted. This sets the device clock zone for on-device schedules and sunrise/sunset. It matters more when Shelly Cloud is off, because the device will not auto-detect a zone. Leave it blank and no location.tz is sent."
         }
       },
@@ -32,7 +32,8 @@
           "ble_scanner_mode": "Bluetooth scanner mode on each adopted Shelly",
           "concurrency": "Devices to provision at once",
           "retries": "Retries per device",
-          "provisioning_minutes": "Provisioning mode timeout (minutes)"
+          "provisioning_minutes": "Provisioning mode timeout (minutes)",
+          "default_output_type": "Default output type"
         },
         "data_description": {
           "disable_ble_rpc": "Bluetooth RPC is the setup channel. The advertisement proxy keeps working with RPC off.",
@@ -40,7 +41,8 @@
           "require_allowlist": "While this is on, auto-adopt leaves devices that are not on the list alone. Turn it off only to adopt every factory-new Shelly in range, including a neighbour's.",
           "ble_scanner_mode": "Active asks nearby devices for full advertisements. Shelly proxies cannot open GATT connections.",
           "concurrency": "Keep this within the free connection slots of your connectable Bluetooth proxies. 2 is a safe start.",
-          "provisioning_minutes": "How long the provisioning switch stays on. This is not the device's 15-minute setup window."
+          "provisioning_minutes": "How long the provisioning switch stays on. This is not the device's 15-minute setup window.",
+          "default_output_type": "Applied to every switch channel during adoption and profile apply, unless you set that channel yourself. Light makes the core Shelly integration create a light. This does not reboot the device."
         }
       }
     },
@@ -49,14 +51,14 @@
     },
     "abort": {
       "already_configured": "This site name is already configured.",
-      "not_loaded": "Shelly Bulk is not loaded yet. Finish setup and try again.",
+      "not_loaded": "Shelly Installer is not loaded yet. Finish setup and try again.",
       "allowlist_imported": "Imported {count} devices into this Home Assistant instance."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Shelly Bulk options",
+        "title": "Shelly Installer options",
         "menu_options": {
           "wifi": "Wi-Fi",
           "security": "Security and timezone",
@@ -68,7 +70,8 @@
           "allowlist": "Import allowlist",
           "add_device": "Add device",
           "edit_device": "Edit a device",
-          "bulk_change": "Bulk change settings"
+          "bulk_change": "Bulk change settings",
+          "device_type": "Device type"
         }
       },
       "wifi": {
@@ -132,9 +135,10 @@
       },
       "outputs": {
         "title": "Output profile",
-        "description": "Power-on state and auto on/off timers. Match input applies to switches. Toggle applies to dimmers. A value the model rejects is skipped.",
+        "description": "Power-on state and auto on/off timers. Match input applies to switches. Toggle applies to dimmers. A value the model rejects is skipped. Default output type is light, so switch outputs show as lights in Home Assistant unless you set a channel yourself.",
         "data": {
           "apply_output_profile": "Apply this output profile",
+          "default_output_type": "Default output type",
           "initial_state": "Power-on state",
           "auto_on": "Auto on",
           "auto_on_delay": "Auto on delay (seconds)",
@@ -171,7 +175,11 @@
           "ble_scanner_mode": "Bluetooth scanner mode on each adopted Shelly",
           "concurrency": "Devices to provision at once",
           "retries": "Retries per device",
-          "provisioning_minutes": "Provisioning mode timeout (minutes)"
+          "provisioning_minutes": "Provisioning mode timeout (minutes)",
+          "batch_output_type": "Output type for auto-adopt and Find my Shelly"
+        },
+        "data_description": {
+          "batch_output_type": "One type for every device those batch adds list. It is stored on the device and is not replaced by a later change of the site default. The device is not rebooted."
         }
       },
       "allowlist": {
@@ -184,15 +192,21 @@
       },
       "add_device": {
         "title": "Add device",
-        "description": "Appends one Shelly to shelly_bulk/devices.csv and the allowlist. A MAC that is already listed is left as you edited it.",
+        "description": "Appends one Shelly to shelly_bulk/devices.csv and the allowlist. A MAC that is already listed is left as you edited it. Output type is filled from the site default. If this model has profiles, the mode is applied before the name and the device restarts once. The choice is kept, so a later site default does not overwrite it.",
         "data": {
           "mac": "MAC address",
           "name": "Name",
-          "room": "Room"
+          "room": "Room",
+          "output_type": "Output type, channel 1",
+          "output_type_2": "Output type, channel 2",
+          "profile": "Device profile"
         },
         "data_description": {
           "mac": "12 hex digits, with or without colons.",
           "name": "Optional. Leave blank and fill it in later.",
+          "output_type": "Consumption type for the first switch. Light makes the core Shelly integration create a light.",
+          "output_type_2": "Used when the device has a second switch. Leave it the same as channel 1 when there is only one.",
+          "profile": "Don't set unless the model lists profiles, such as switch or cover on a 2PM. Applied before the name. The device restarts once.",
           "room": "Optional Home Assistant area name."
         }
       },
@@ -241,6 +255,29 @@
         "description": "Choose devices by group. You confirm how many will change before any device is touched.",
         "data": {
           "group": "Devices"
+        }
+      },
+      "device_type": {
+        "title": "Device type",
+        "description": "Choose the devices. The next step sets the consumption type, and the profile only when you confirm the reboot.",
+        "data": {
+          "group": "Devices"
+        }
+      },
+      "device_type_form": {
+        "title": "Device type",
+        "description": "Consumption type is saved on each switch channel and is not a reboot. Home Assistant shows a channel as a light when the type is light, and as a switch otherwise. A profile is sent only to devices that list it, and only when you tick the box. The device reboots itself after a profile change. Nothing else in Shelly Installer reboots a device. This will update {count} devices, one at a time.",
+        "data": {
+          "consumption_type": "Consumption type",
+          "profile": "Device profile",
+          "confirm_profile_reboot": "Reboot these devices to apply the profile",
+          "set_site_default": "Set all outputs to the site default"
+        },
+        "data_description": {
+          "consumption_type": "Applied to every switch channel that you have not set yourself. Leave unchanged to skip.",
+          "set_site_default": "One step for devices already in Home Assistant, including ones added before Shelly Installer. Channels you set yourself are left alone. Does not reboot.",
+          "profile": "Shown from Shelly.ListProfiles. Leave unchanged to skip. Switch and cover are typical on a 2PM.",
+          "confirm_profile_reboot": "Required to change profile. The device reboots itself. Webhooks and schedules on that device are deleted by Shelly."
         }
       },
       "bulk_filter": {
@@ -304,15 +341,17 @@
       "invalid_mac": "Enter a 12-digit MAC address.",
       "already_listed": "That MAC is already on the device list. Edit the CSV to change its name or room.",
       "not_applied": "The device did not keep this value. It was left as it is.",
-      "not_reachable": "Shelly Bulk could not open this device. Check that it is online."
+      "not_reachable": "Shelly Installer could not open this device. Check that it is online.",
+      "confirm_profile": "Tick the box to change profile. The device reboots itself. No other change reboots it."
     },
     "abort": {
       "allowlist_imported": "Imported {count} devices into this Home Assistant instance.",
-      "not_loaded": "Shelly Bulk is not loaded yet. Finish setup and try again.",
+      "not_loaded": "Shelly Installer is not loaded yet. Finish setup and try again.",
       "no_devices": "No Shelly devices have been added yet.",
       "bulk_started": "Applying settings to {count} devices. Progress and results are in a notification, and in the report.",
       "device_saved": "Saved this device. No other devices were changed.",
-      "nothing_selected": "No settings were ticked, so nothing was sent."
+      "nothing_selected": "No settings were ticked, so nothing was sent.",
+      "device_type_started": "Updating device type on {count} devices, one at a time. A profile change reboots that device, then its Shelly entry is reloaded."
     }
   },
   "entity": {
@@ -348,6 +387,19 @@
           "auto": "Auto",
           "passive": "Passive",
           "disabled": "Disabled"
+        }
+      },
+      "consumption_type": {
+        "name": "Consumption type {channel}",
+        "state": {
+          "switch": "Switch",
+          "light": "Light",
+          "fan": "Fan",
+          "socket": "Socket",
+          "outlet": "Outlet",
+          "heating": "Heating",
+          "refrigeration": "Refrigeration",
+          "other": "Other"
         }
       },
       "input_mode": {
@@ -409,7 +461,7 @@
   "services": {
     "apply_profile": {
       "name": "Apply profile",
-      "description": "Apply the Shelly Bulk security and channel profile to Shelly devices already added by the core Shelly integration. Sets the device login only when a device has no password. Devices that already have a password are not changed, and Home Assistant keeps the password already stored for them.",
+      "description": "Apply the Shelly Installer security and channel profile to Shelly devices already added by the core Shelly integration. Sets the device login only when a device has no password. Devices that already have a password are not changed, and Home Assistant keeps the password already stored for them.",
       "fields": {
         "device_id": {
           "name": "Devices",
@@ -421,7 +473,7 @@
         },
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name. Required only when more than one Shelly Bulk entry exists."
+          "description": "Shelly Installer site name. Required only when more than one Shelly Installer entry exists."
         },
         "mac": {
           "name": "MAC address",
@@ -451,7 +503,7 @@
         },
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         },
         "mac": {
           "name": "MAC address",
@@ -489,7 +541,7 @@
         },
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         },
         "mac": {
           "name": "MAC address",
@@ -523,7 +575,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         },
         "provisioning_minutes": {
           "name": "Timeout (minutes)",
@@ -537,7 +589,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         }
       }
     },
@@ -547,7 +599,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         }
       }
     },
@@ -557,7 +609,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         },
         "format": {
           "name": "Format",
@@ -571,7 +623,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         },
         "filename": {
           "name": "Filename",
@@ -589,7 +641,7 @@
       "fields": {
         "device_id": {"name": "Devices", "description": "Core Shelly devices to secure."},
         "area_id": {"name": "Areas", "description": "Secure every core Shelly device in these areas."},
-        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "site": {"name": "Site", "description": "Shelly Installer site name when more than one entry exists."},
         "mac": {"name": "MAC address", "description": "Optional device MAC."},
         "all_shelly": {"name": "All Shelly devices", "description": "Secure every core Shelly config entry."},
         "rotate_password": {"name": "Set login when missing", "description": "Shelly.SetAuth with username admin, only when the device has no login. Does not replace an existing password."},
@@ -609,7 +661,7 @@
       "fields": {
         "device_id": {"name": "Devices", "description": "Core Shelly devices to read. Omit, with no area or MAC, to audit every Shelly."},
         "area_id": {"name": "Areas", "description": "Audit every core Shelly device in these areas."},
-        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "site": {"name": "Site", "description": "Shelly Installer site name when more than one entry exists."},
         "mac": {"name": "MAC address", "description": "Optional device MAC."},
         "all_shelly": {"name": "All Shelly devices", "description": "Audit every core Shelly config entry."}
       }
@@ -620,7 +672,7 @@
       "fields": {
         "device_id": {"name": "Devices", "description": "Core Shelly devices to update."},
         "area_id": {"name": "Areas", "description": "Update every core Shelly device in these areas."},
-        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "site": {"name": "Site", "description": "Shelly Installer site name when more than one entry exists."},
         "mac": {"name": "MAC address", "description": "Optional device MAC."},
         "all_shelly": {"name": "All Shelly devices", "description": "Update every core Shelly config entry."},
         "channel": {"name": "Channel", "description": "Input or output index. Defaults to 0."},
@@ -651,7 +703,7 @@
       "fields": {
         "device_id": {"name": "Devices", "description": "Core Shelly devices to update."},
         "area_id": {"name": "Areas", "description": "Update every core Shelly device in these areas."},
-        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "site": {"name": "Site", "description": "Shelly Installer site name when more than one entry exists."},
         "all": {"name": "All Shellies", "description": "Update every core Shelly config entry."},
         "model": {"name": "Model", "description": "Model code or name, for example S3SW-001P8EU."},
         "input_type": {"name": "Input type", "description": "switch or button."},
