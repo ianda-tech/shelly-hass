@@ -27,6 +27,7 @@ from .const import (
     SERVICE_AUDIT_SECURITY,
     SERVICE_BULK_SET,
     SERVICE_SET_ADVANCED,
+    SERVICE_RETRY_FAILED,
     SERVICE_START_PROVISIONING,
     SERVICE_STOP_PROVISIONING,
 )
@@ -89,6 +90,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
     await runtime.async_load()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
     entry.runtime_data = runtime
+    # Register companions before entities. Entity DeviceInfo must not carry
+    # via_device, or Home Assistant 2026.11 refuses to add the entity.
+    from .entity import ensure_companion_devices
+
+    ensure_companion_devices(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_reload))
     _async_register_services(hass)
@@ -114,6 +120,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
             SERVICE_AUDIT_SECURITY,
             SERVICE_SET_ADVANCED,
             SERVICE_BULK_SET,
+            SERVICE_RETRY_FAILED,
         ):
             hass.services.async_remove(DOMAIN, service)
     return unloaded
@@ -207,6 +214,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
         SERVICE_STOP_PROVISIONING,
         _stop,
         schema=vol.Schema({vol.Optional("site"): cv.string}, extra=vol.ALLOW_EXTRA),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RETRY_FAILED,
+        _retry_failed,
+        schema=vol.Schema({vol.Optional("site"): cv.string}, extra=vol.ALLOW_EXTRA),
+        supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(
         DOMAIN,
@@ -403,6 +417,13 @@ async def _start(call: ServiceCall) -> None:
 
 async def _stop(call: ServiceCall) -> None:
     await _runtime(call.hass, call).stop_provisioning()
+
+
+async def _retry_failed(call: ServiceCall) -> dict[str, Any] | None:
+    macs = _runtime(call.hass, call).retry_failed()
+    if call.return_response:
+        return {"macs": macs, "count": len(macs)}
+    return None
 
 
 async def _export(call: ServiceCall) -> dict[str, str] | None:

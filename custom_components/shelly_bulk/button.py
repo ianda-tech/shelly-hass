@@ -18,7 +18,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     runtime: FleetRuntime = hass.data[DOMAIN][entry.entry_id]
-    entities: list[ButtonEntity] = [FindButton(runtime), ReloadDeviceListButton(runtime)]
+    entities: list[ButtonEntity] = [
+        FindButton(runtime),
+        ReloadDeviceListButton(runtime),
+        RetryFailedButton(runtime),
+    ]
     for shelly_entry in hass.config_entries.async_entries(SHELLY_DOMAIN):
         entities.append(IdentifyButton(runtime, shelly_entry))
     async_add_entities(entities)
@@ -48,6 +52,19 @@ class ReloadDeviceListButton(FleetEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self.runtime.reload_device_list(force=True)
+
+
+class RetryFailedButton(FleetEntity, ButtonEntity):
+    """Clear failed adoptions so the next advertisement tries those devices."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "retry_failed"
+
+    def __init__(self, runtime: FleetRuntime) -> None:
+        super().__init__(runtime, "retry_failed")
+
+    async def async_press(self) -> None:
+        self.runtime.retry_failed()
 
 
 class IdentifyButton(ButtonEntity):

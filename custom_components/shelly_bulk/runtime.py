@@ -206,6 +206,8 @@ class FleetRuntime:
 
     def record(self, mac: str, status: str, error: str = "", *, count: bool = True, **extra: Any) -> None:
         """Append a per-device result. Passwords are never stored."""
+        if status == "failed":
+            error = self.provisioner.failure_text(mac, error)
         safe_error = self.redact(error)
         row = {
             "mac": display_mac(mac) if _is_mac(mac) else mac,
@@ -244,16 +246,22 @@ class FleetRuntime:
             if entry.unique_id and _mac_key(entry.unique_id) == plain:
                 return entry
         dev_reg = dr.async_get(self.hass)
-        for device in dev_reg.devices.values():
+        from .entity import device_config_entry_ids, registry_devices
+
+        for device in registry_devices(dev_reg):
             for domain, value in device.connections:
                 if domain == dr.CONNECTION_NETWORK_MAC and _mac_key(value) == plain:
-                    for entry_id in device.config_entries:
+                    for entry_id in device_config_entry_ids(device):
                         entry = self.hass.config_entries.async_get_entry(entry_id)
                         if entry and entry.domain == SHELLY_DOMAIN:
                             return entry
         return None
 
     def flag_locked(self, mac: str, local_name: str = "") -> None:
+        try:
+            self.provisioner._rpc_off.add(normalize_mac(mac))
+        except ValueError:
+            pass
         shown = display_mac(mac)
         self.set_last_error(
             f"{shown} is advertising without Bluetooth RPC. Power-cycle it to reopen the setup window."
@@ -267,6 +275,39 @@ class FleetRuntime:
             translation_key="ble_window_closed",
             translation_placeholders={"mac": shown, "name": local_name or shown},
         )
+
+    def retry_failed(self) -> list[str]:
+        """Clear failed results and let the next advertisement try those MACs.
+
+        The devices are not contacted now. Provisioning picks them up when they
+        advertise again.
+        """
+        macs: list[str] = []
+        seen: set[str] = set()
+        kept: list[dict[str, Any]] = []
+        for row in self.results:
+            if row.get("status") != "failed":
+                kept.append(row)
+                continue
+            raw = str(row.get("mac") or "")
+            try:
+                plain = normalize_mac(raw)
+            except ValueError:
+                plain = raw
+            if plain and plain not in seen:
+                seen.add(plain)
+                macs.append(plain)
+                async_delete_issue(self.hass, DOMAIN, f"ble_window_{_mac_key(plain)}")
+        self.results = kept
+        self.failed = 0
+        if kept:
+            self.last_error = str(kept[-1].get("error") or "")[:255]
+        else:
+            self.last_error = ""
+        self.provisioner.release_for_retry(seen)
+        self.notify()
+        self._store.async_delay_save(self._store_data, 1)
+        return [display_mac(mac) if _is_mac(mac) else mac for mac in macs]
 
     async def start_provisioning(self, minutes: float | None = None) -> None:
         if minutes is None:
@@ -641,7 +682,7 @@ class FleetRuntime:
         """
         from .entity import safe_device_update, update_companion_device
 
-        update_companion_device(self.hass, entry, ip=ip)
+        update_companion_device(self.hass, entry, ip=ip, bulk_entry_id=self.entry.entry_id)
         dev_reg = dr.async_get(self.hass)
         devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
         device = next((item for item in devices if item.via_device_id is None), None)
@@ -655,12 +696,17 @@ class FleetRuntime:
                 mac = display_mac(entry.unique_id)
             except ValueError:
                 mac = ""
-        kwargs: dict[str, Any] = {}
         if mac:
-            kwargs["merge_connections"] = {(dr.CONNECTION_NETWORK_MAC, mac)}
+            wanted = (dr.CONNECTION_NETWORK_MAC, mac)
+            connections = set(device.connections)
+            if wanted not in connections:
+                safe_device_update(
+                    dev_reg,
+                    device.id,
+                    new_connections=connections | {wanted},
+                )
         if ip:
-            kwargs["configuration_url"] = f"http://{ip}"
-        safe_device_update(dev_reg, device.id, **kwargs)
+            safe_device_update(dev_reg, device.id, configuration_url=f"http://{ip}")
 
     async def refresh_network(self, entry: ConfigEntry) -> dict[str, Any]:
         """Read the live Wi-Fi address. Falls back to the host stored by core Shelly."""
@@ -863,13 +909,9 @@ class FleetRuntime:
     async def finish_adopted_device(self, mac: str) -> None:
         entry = await self.provisioner.wait_for_entry(mac)
         if entry is None:
-            self.record(
-                mac,
-                "failed",
-                "Home Assistant did not create a Shelly entry. The 15-minute setup window "
-                "may have closed; power-cycle the device and try again.",
-            )
-            self.flag_locked(mac)
+            self.record(mac, "failed", "Home Assistant did not create a Shelly entry.")
+            if self.provisioner.advertises_without_rpc(mac):
+                self.flag_locked(mac)
             return
         await self._wait_settled(entry)
         await self._customise(entry, mac, provisioning=True)
@@ -982,6 +1024,8 @@ class FleetRuntime:
         all_shelly: bool,
         model_contains: str | None,
     ) -> list[ConfigEntry]:
+        from .entity import device_config_entry_ids
+
         found: dict[str, ConfigEntry] = {}
         if mac:
             entry = self.shelly_entry_for(mac)
@@ -996,7 +1040,7 @@ class FleetRuntime:
             device = dev_reg.async_get(device_id)
             if device is None:
                 continue
-            for entry_id in device.config_entries:
+            for entry_id in device_config_entry_ids(device):
                 entry = self.hass.config_entries.async_get_entry(entry_id)
                 if entry and entry.domain == SHELLY_DOMAIN:
                     found[entry.entry_id] = entry

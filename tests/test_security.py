@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.shelly_bulk.const import CONF_FLEET_PASSWORD, CONF_SITE_NAME, DOMAIN
 from custom_components.shelly_bulk.security import SecureProfile, evaluate_security

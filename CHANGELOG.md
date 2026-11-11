@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.9
+
+- Per-device controls add again on Home Assistant 2026.11. The companion device is registered with `via_device_id` before its entities are added, and the MAC is stored with the current device-registry calls. The old `via_device` argument made Home Assistant refuse the entity.
+- **Retry failed** clears the failed list and tries those devices again the next time they advertise. The same action is `shelly_bulk.retry_failed`. A failed result mentions a power-cycle only when that device is advertising without Bluetooth RPC.
+
 ## 0.2.8
 
 - Shelly Bulk no longer reboots a device. `BLE.SetConfig`, `WiFi.SetConfig`, `Cloud.SetConfig`, `MQTT.SetConfig`, and `Sys.SetConfig` are sent only when the device value is different, including during adoption and the secure profile. Enabling the Home Assistant controls does not push those settings on startup or on a refresh.
