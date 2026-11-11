@@ -46,6 +46,7 @@ from .const import (
     CONF_BUTTON_DIMMING,
     CONF_BUTTON_FADE_RATE,
     CONF_CONCURRENCY,
+    CONF_DEFAULT_OUTPUT_TYPE,
     CONF_DISABLE_AP,
     CONF_DISABLE_BLE_RPC,
     CONF_DISABLE_CLOUD,
@@ -116,6 +117,9 @@ _BEHAVIOUR_SCHEMA = vol.Schema(
         vol.Required(CONF_CONCURRENCY, default=2): _number(1, 5),
         vol.Required(CONF_RETRIES, default=1): _number(0, 3),
         vol.Required(CONF_PROVISIONING_MINUTES, default=30): _number(5, 180),
+        vol.Required(CONF_DEFAULT_OUTPUT_TYPE, default="light"): _choice(
+            [(name, CONSUMPTION_LABELS.get(name, name)) for name in CONSUMPTION_TYPES]
+        ),
     }
 )
 
@@ -135,6 +139,7 @@ def _behaviour_options(user_input: dict[str, Any]) -> dict[str, Any]:
         CONF_CONCURRENCY: int(user_input[CONF_CONCURRENCY]),
         CONF_RETRIES: int(user_input[CONF_RETRIES]),
         CONF_PROVISIONING_MINUTES: int(user_input[CONF_PROVISIONING_MINUTES]),
+        CONF_DEFAULT_OUTPUT_TYPE: str(user_input.get(CONF_DEFAULT_OUTPUT_TYPE) or "light"),
     }
 
 
@@ -331,6 +336,8 @@ class ShellyBulkOptionsFlow(OptionsFlow):
         if user_input is not None:
             options = dict(self.config_entry.options)
             options[CONF_APPLY_OUTPUT_PROFILE] = bool(user_input[CONF_APPLY_OUTPUT_PROFILE])
+            chosen = str(user_input.get(CONF_DEFAULT_OUTPUT_TYPE) or options.get(CONF_DEFAULT_OUTPUT_TYPE) or "light")
+            options[CONF_DEFAULT_OUTPUT_TYPE] = chosen if chosen in CONSUMPTION_TYPES else "light"
             options[CONF_INITIAL_STATE] = user_input.get(CONF_INITIAL_STATE) or UNCHANGED
             options[CONF_AUTO_ON] = bool(user_input.get(CONF_AUTO_ON))
             options[CONF_AUTO_OFF] = bool(user_input.get(CONF_AUTO_OFF))
@@ -345,6 +352,9 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                     vol.Required(
                         CONF_APPLY_OUTPUT_PROFILE, default=bool(options.get(CONF_APPLY_OUTPUT_PROFILE, False))
                     ): BooleanSelector(),
+                    vol.Required(
+                        CONF_DEFAULT_OUTPUT_TYPE, default=str(options.get(CONF_DEFAULT_OUTPUT_TYPE) or "light")
+                    ): _choice([(name, CONSUMPTION_LABELS.get(name, name)) for name in CONSUMPTION_TYPES]),
                     vol.Required(
                         CONF_INITIAL_STATE, default=options.get(CONF_INITIAL_STATE, UNCHANGED)
                     ): _choice(
@@ -662,16 +672,18 @@ class ShellyBulkOptionsFlow(OptionsFlow):
             consumption = str(user_input.get("consumption_type") or UNCHANGED)
             profile = str(user_input.get("profile") or UNCHANGED)
             confirm = bool(user_input.get("confirm_profile_reboot"))
+            set_default = bool(user_input.get("set_site_default"))
             if profile != UNCHANGED and not confirm:
                 errors["confirm_profile_reboot"] = "confirm_profile"
-            elif consumption == UNCHANGED and profile == UNCHANGED:
+            elif not set_default and consumption == UNCHANGED and profile == UNCHANGED:
                 return self.async_abort(reason="nothing_selected")
             else:
                 runtime.start_device_type(
                     [card.entry_id for card in self._bulk_chosen],
-                    consumption=None if consumption == UNCHANGED else consumption,
+                    consumption=None if set_default or consumption == UNCHANGED else consumption,
                     profile=None if profile == UNCHANGED else profile,
                     confirm_reboot=confirm,
+                    apply_site_default=set_default,
                 )
                 return self.async_abort(
                     reason="device_type_started",
@@ -688,6 +700,7 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                     vol.Required("consumption_type", default=UNCHANGED): _choice(consumption_options),
                     vol.Required("profile", default=UNCHANGED): _choice(profile_options),
                     vol.Required("confirm_profile_reboot", default=False): BooleanSelector(),
+                    vol.Required("set_site_default", default=False): BooleanSelector(),
                 }
             ),
             errors=errors,

@@ -8,12 +8,20 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.shelly_bulk.const import DOMAIN
 from custom_components.shelly_bulk.device_type import (
+    apply_default_output,
     consumption_list_with,
+    site_default_output,
     write_consumption,
     write_profile,
 )
 
 from test_integration import _entry
+
+
+def test_missing_site_default_is_light() -> None:
+    assert site_default_output({}) == "light"
+    assert site_default_output({"default_output_type": "fan"}) == "fan"
+    assert site_default_output({"default_output_type": "nope"}) == "light"
 
 
 def test_consumption_list_keeps_other_channels() -> None:
@@ -56,7 +64,7 @@ class _Session:
 
 async def test_matching_consumption_and_profile_are_not_sent() -> None:
     session = _Session()
-    assert await write_consumption(session, 1, "light") == "light"
+    assert await write_consumption(session, 1, "light") == ("light", False)
     assert "Sys.SetConfig" not in session.calls
     assert await write_profile(session, "switch") is False
     assert "Shelly.SetProfile" not in session.calls
@@ -65,7 +73,7 @@ async def test_matching_consumption_and_profile_are_not_sent() -> None:
 
 async def test_changed_consumption_and_profile_do_not_call_reboot() -> None:
     session = _Session()
-    assert await write_consumption(session, 0, "fan") == "fan"
+    assert await write_consumption(session, 0, "fan") == ("fan", True)
     assert session.types == ["fan", "light"]
     assert session.calls.count("Sys.SetConfig") == 1
     assert await write_profile(session, "cover") is True
@@ -105,8 +113,8 @@ async def test_device_type_step_requires_the_reboot_box(hass, monkeypatch) -> No
 
     recorded: dict = {}
 
-    def _start(entry_ids, *, consumption, profile, confirm_reboot):
-        recorded["call"] = (list(entry_ids), consumption, profile, confirm_reboot)
+    def _start(entry_ids, *, consumption, profile, confirm_reboot, apply_site_default=False):
+        recorded["call"] = (list(entry_ids), consumption, profile, confirm_reboot, apply_site_default)
         return len(entry_ids)
 
     runtime.describe_device_types = _describe
@@ -130,7 +138,7 @@ async def test_device_type_step_requires_the_reboot_box(hass, monkeypatch) -> No
     )
     assert result["type"] == "abort"
     assert result["reason"] == "device_type_started"
-    assert recorded["call"][1:] == ("light", "cover", True)
+    assert recorded["call"][1:] == ("light", "cover", True, False)
 
 
 async def test_profile_changes_wait_between_devices(hass, monkeypatch) -> None:
@@ -167,8 +175,8 @@ async def test_profile_changes_wait_between_devices(hass, monkeypatch) -> None:
     async def _pause(seconds: float) -> None:
         pauses.append(seconds)
 
-    def _reload_later(shelly_entry) -> None:
-        reloads.append(shelly_entry.entry_id)
+    def _reload_later(shelly_entry, delay: float = 15) -> None:
+        reloads.append((shelly_entry.entry_id, delay))
 
     runtime._pause = _pause
     runtime._reload_shelly_later = _reload_later
@@ -180,7 +188,23 @@ async def test_profile_changes_wait_between_devices(hass, monkeypatch) -> None:
     runtime._open_shelly = _open
     await runtime._apply_device_types([first.entry_id, second.entry_id], "fan", "cover")
     assert pauses == [8]
-    assert reloads == [first.entry_id, second.entry_id]
     assert sessions[first.entry_id].profile == "cover"
     assert sessions[second.entry_id].types[0] == "fan"
     assert all("Shelly.Reboot" not in session.calls for session in sessions.values())
+    assert reloads == [
+        (first.entry_id, 2),
+        (first.entry_id, 15),
+        (second.entry_id, 2),
+        (second.entry_id, 15),
+    ]
+
+
+async def test_site_default_skips_overrides_and_does_not_reboot() -> None:
+    session = _Session()
+    assert await apply_default_output(session, "light", {1}) is True
+    assert session.types == ["light", "light"]
+    assert session.calls.count("Sys.SetConfig") == 1
+    assert "Shelly.Reboot" not in session.calls
+    session.calls.clear()
+    assert await apply_default_output(session, "light", {0}) is False
+    assert "Sys.SetConfig" not in session.calls

@@ -113,6 +113,7 @@ class FleetRuntime:
         self._network: dict[str, dict[str, Any]] = {}
         self._consumption_cache: dict[str, dict[str, Any]] = {}
         self._consumption_added: set[tuple[str, int]] = set()
+        self._output_overrides: dict[str, dict[str, str]] = {}
         # Entity setup used to open one RPC session per control at the same time.
         # A Shelly reboots when that many sessions arrive together.
         self._rpc_limit = asyncio.Semaphore(3)
@@ -181,6 +182,13 @@ class FleetRuntime:
         self.failed = int(stored.get("failed") or 0)
         self.last_error = str(stored.get("last_error") or "")
         self.results = list(stored.get("results") or [])
+        raw_overrides = stored.get("output_overrides") or {}
+        if isinstance(raw_overrides, dict):
+            self._output_overrides = {
+                str(entry_id): {str(channel): str(value) for channel, value in channels.items()}
+                for entry_id, channels in raw_overrides.items()
+                if isinstance(channels, dict)
+            }
         await self.ensure_device_list()
         await self.reload_device_list(force=True)
         if self.effective_auto_adopt:
@@ -204,6 +212,7 @@ class FleetRuntime:
             "failed": self.failed,
             "last_error": self.last_error,
             "results": self.results[-MAX_STORED_RESULTS:],
+            "output_overrides": self._output_overrides,
         }
 
     def record(self, mac: str, status: str, error: str = "", *, count: bool = True, **extra: Any) -> None:
@@ -762,10 +771,14 @@ class FleetRuntime:
 
         session = await self._open_shelly(entry, attempts=1)
         try:
-            written = await write_consumption(session, channel, value)
+            written, changed = await write_consumption(session, channel, value)
         finally:
             await session.shutdown()
         self._consumption_cache.pop(entry.entry_id, None)
+        if written is not None:
+            self.remember_output_override(entry.entry_id, channel, written)
+        if changed:
+            self._reload_shelly_later(entry, 2)
         return written
 
     async def describe_device_types(self, entry_ids: list[str]) -> dict[str, Any]:
@@ -795,11 +808,17 @@ class FleetRuntime:
         consumption: str | None,
         profile: str | None,
         confirm_reboot: bool,
+        apply_site_default: bool = False,
     ) -> int:
         """Apply consumption type, then a confirmed profile, one device at a time."""
         ids = list(dict.fromkeys(entry_ids))
         self.hass.async_create_background_task(
-            self._apply_device_types(ids, consumption, profile if confirm_reboot else None),
+            self._apply_device_types(
+                ids,
+                None if apply_site_default else consumption,
+                profile if confirm_reboot else None,
+                apply_site_default,
+            ),
             name="shelly_bulk_device_type",
         )
         self._notify(
@@ -812,23 +831,51 @@ class FleetRuntime:
     async def _pause(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
 
-    def _reload_shelly_later(self, entry: ConfigEntry) -> None:
-        """Reload the core Shelly entry after the device has rebooted itself."""
+    def _reload_shelly_later(self, entry: ConfigEntry, delay: float = 15) -> None:
+        """Reload the core Shelly entry so it rebuilds light or switch entities.
+
+        A profile change waits longer because the device reboots itself first.
+        A consumption type change does not reboot the device.
+        """
 
         def _reload(_now: object) -> None:
             if self.hass.config_entries.async_get_entry(entry.entry_id) is None:
                 return
             self.hass.config_entries.async_schedule_reload(entry.entry_id)
 
-        async_call_later(self.hass, 15, _reload)
+        async_call_later(self.hass, delay, _reload)
+
+    def site_default_output(self) -> str:
+        from .device_type import site_default_output
+
+        return site_default_output(self.entry.options)
+
+    def output_override_channels(self, entry_id: str) -> set[int]:
+        saved = self._output_overrides.get(entry_id) or {}
+        channels: set[int] = set()
+        for channel in saved:
+            try:
+                channels.add(int(channel))
+            except ValueError:
+                continue
+        return channels
+
+    def remember_output_override(self, entry_id: str, channel: int, value: str) -> None:
+        from .device_type import normalize_consumption
+
+        per = dict(self._output_overrides.get(entry_id) or {})
+        per[str(channel)] = normalize_consumption(value)
+        self._output_overrides[entry_id] = per
+        self._store.async_delay_save(self._store_data, 1)
 
     async def _apply_device_types(
         self,
         entry_ids: list[str],
         consumption: str | None,
         profile: str | None,
+        apply_site_default: bool = False,
     ) -> None:
-        from .device_type import switch_channels, write_consumption, write_profile
+        from .device_type import apply_default_output, switch_channels, write_consumption, write_profile
 
         changed_profile = False
         for index, entry_id in enumerate(entry_ids):
@@ -838,10 +885,26 @@ class FleetRuntime:
             session = None
             try:
                 session = await self._open_shelly(entry, attempts=1)
-                if consumption:
-                    for channel in switch_channels(dict(getattr(session, "config", {}) or {})):
-                        await write_consumption(session, channel, consumption)
+                config = dict(getattr(session, "config", {}) or {})
+                if apply_site_default:
+                    wrote = await apply_default_output(
+                        session,
+                        self.site_default_output(),
+                        self.output_override_channels(entry.entry_id),
+                    )
                     self._consumption_cache.pop(entry.entry_id, None)
+                    if wrote:
+                        self._reload_shelly_later(entry, 2)
+                elif consumption:
+                    wrote = False
+                    for channel in switch_channels(config):
+                        result, changed = await write_consumption(session, channel, consumption)
+                        if result is not None:
+                            self.remember_output_override(entry.entry_id, channel, consumption)
+                        wrote = wrote or changed
+                    self._consumption_cache.pop(entry.entry_id, None)
+                    if wrote:
+                        self._reload_shelly_later(entry, 2)
                 if profile and await write_profile(session, profile):
                     changed_profile = True
                     self._reload_shelly_later(entry)
@@ -1261,6 +1324,21 @@ class FleetRuntime:
                 device=listed,
             )
             notes.extend(plan_notes)
+            try:
+                from .device_type import apply_default_output
+
+                if await apply_default_output(
+                    session,
+                    self.site_default_output(),
+                    self.output_override_channels(entry.entry_id),
+                ):
+                    notes.append(
+                        f"Switch outputs set to {self.site_default_output()} "
+                        "where you had not chosen a different type."
+                    )
+                    self._reload_shelly_later(entry, 2)
+            except Exception as err:  # noqa: BLE001
+                notes.append(f"Output type: {self.redact(str(err))}")
             restart = await async_execute_calls(session, calls, notes, self.redact)
             if restart:
                 notes.append(

@@ -32,7 +32,8 @@
           "ble_scanner_mode": "Bluetooth scanner mode on each adopted Shelly",
           "concurrency": "Devices to provision at once",
           "retries": "Retries per device",
-          "provisioning_minutes": "Provisioning mode timeout (minutes)"
+          "provisioning_minutes": "Provisioning mode timeout (minutes)",
+          "default_output_type": "Default output type"
         },
         "data_description": {
           "disable_ble_rpc": "Bluetooth RPC is the setup channel. The advertisement proxy keeps working with RPC off.",
@@ -40,7 +41,8 @@
           "require_allowlist": "While this is on, auto-adopt leaves devices that are not on the list alone. Turn it off only to adopt every factory-new Shelly in range, including a neighbour's.",
           "ble_scanner_mode": "Active asks nearby devices for full advertisements. Shelly proxies cannot open GATT connections.",
           "concurrency": "Keep this within the free connection slots of your connectable Bluetooth proxies. 2 is a safe start.",
-          "provisioning_minutes": "How long the provisioning switch stays on. This is not the device's 15-minute setup window."
+          "provisioning_minutes": "How long the provisioning switch stays on. This is not the device's 15-minute setup window.",
+          "default_output_type": "Applied to every switch channel during adoption and profile apply, unless you set that channel yourself. Light makes the core Shelly integration create a light. This does not reboot the device."
         }
       }
     },
@@ -133,9 +135,10 @@
       },
       "outputs": {
         "title": "Output profile",
-        "description": "Power-on state and auto on/off timers. Match input applies to switches. Toggle applies to dimmers. A value the model rejects is skipped.",
+        "description": "Power-on state and auto on/off timers. Match input applies to switches. Toggle applies to dimmers. A value the model rejects is skipped. Default output type is light, so switch outputs show as lights in Home Assistant unless you set a channel yourself.",
         "data": {
           "apply_output_profile": "Apply this output profile",
+          "default_output_type": "Default output type",
           "initial_state": "Power-on state",
           "auto_on": "Auto on",
           "auto_on_delay": "Auto on delay (seconds)",
@@ -257,10 +260,12 @@
         "data": {
           "consumption_type": "Consumption type",
           "profile": "Device profile",
-          "confirm_profile_reboot": "Reboot these devices to apply the profile"
+          "confirm_profile_reboot": "Reboot these devices to apply the profile",
+          "set_site_default": "Set all outputs to the site default"
         },
         "data_description": {
-          "consumption_type": "Applied to every switch channel. Leave unchanged to skip.",
+          "consumption_type": "Applied to every switch channel that you have not set yourself. Leave unchanged to skip.",
+          "set_site_default": "One step for devices already in Home Assistant, including ones added before Shelly Installer. Channels you set yourself are left alone. Does not reboot.",
           "profile": "Shown from Shelly.ListProfiles. Leave unchanged to skip. Switch and cover are typical on a 2PM.",
           "confirm_profile_reboot": "Required to change profile. The device reboots itself. Webhooks and schedules on that device are deleted by Shelly."
         }
