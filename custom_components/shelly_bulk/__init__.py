@@ -64,12 +64,23 @@ def _runtime(hass: HomeAssistant, call: ServiceCall) -> FleetRuntime:
 def _reenable_integration_disabled(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Turn entities back on when this integration disabled them.
 
-    A control the user disabled stays off.
+    A control the user disabled stays off. Home Assistant schedules a reload
+    when disabled_by changes, so this must not run on every setup.
     """
     registry = er.async_get(hass)
     for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
         if entity.disabled_by is RegistryEntryDisabler.INTEGRATION:
             registry.async_update_entity(entity.entity_id, disabled_by=None)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate a config entry. Re-enabling runs once, before setup."""
+    if entry.version > 1:
+        return False
+    if entry.minor_version < 2:
+        _reenable_integration_disabled(hass, entry)
+        hass.config_entries.async_update_entry(entry, minor_version=2)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
@@ -78,7 +89,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
     await runtime.async_load()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
     entry.runtime_data = runtime
-    _reenable_integration_disabled(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_reload))
     _async_register_services(hass)

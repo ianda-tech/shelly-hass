@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.7
+
+- Startup no longer stops when the core Shelly device already has the MAC connection. The Shelly Bulk device for that Shelly does not register the MAC connection. It keeps the MAC in its name and in the MAC sensor, and it links to the core Shelly device. A device-registry error is logged and does not stop setup.
+- Turning on controls that an older version had disabled runs once, during migration, before setup. Later restarts do not do it again, so enabling them does not keep reloading the integration. A control you disabled stays off.
+
 ## 0.2.6
 
 - Every Shelly Bulk control on a Shelly device is enabled: the advanced switches and selects, Identify, input behaviour, power-on state, auto-off delay, and the MAC and IP sensors. Identify still does nothing until it is pressed. On upgrade, controls this integration had disabled are turned back on. Controls you disabled stay off.

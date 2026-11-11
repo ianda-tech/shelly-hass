@@ -140,7 +140,7 @@ class ShellyBulkConfigFlow(ConfigFlow, domain=DOMAIN):
     """Collect site Wi-Fi, the device password, and generic behaviour."""
 
     VERSION = 1
-    MINOR_VERSION = 1
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         self._user: dict[str, Any] = {}

@@ -8,7 +8,7 @@
 [![Latest release](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fianda-tech%2Fshelly-hass%2Fmain%2Fcustom_components%2Fshelly_bulk%2Fmanifest.json&query=%24.version&prefix=v&label=Latest%20release&style=for-the-badge&color=2ea44f)](https://github.com/ianda-tech/shelly-hass/releases/latest)
 [![released](https://img.shields.io/github/release-date/ianda-tech/shelly-hass?label=released&style=for-the-badge)](https://github.com/ianda-tech/shelly-hass/releases/latest)
 
-**Current version: 0.2.6.** Bump this line in the same change as `version` in `custom_components/shelly_bulk/manifest.json`.
+**Current version: 0.2.7.** Bump this line in the same change as `version` in `custom_components/shelly_bulk/manifest.json`.
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![License: MIT](https://img.shields.io/github/license/ianda-tech/shelly-hass)](LICENSE)
@@ -172,7 +172,7 @@ Devices that already have a login, and devices already added in Home Assistant, 
 
 ## Identify
 
-Each adopted Shelly gets an **Identify** button. Pressing it toggles the first output for about 2 seconds (`Switch.Set` with `toggle_after`, or the same shape on a light). The button is disabled by default on relays, plugs, and unknown models, because a toggle can energise a connected load. Light-like models (dimmer, bulb, RGB, strip) are enabled by default. Enable the button on the device page only when you are sure a short toggle is safe.
+Each adopted Shelly gets an **Identify** button. Pressing it toggles the first output for about 2 seconds (`Switch.Set` with `toggle_after`, or the same shape on a light). Nothing runs until you press it. A toggle can energise a connected load, so press it only when that is safe.
 
 ## Bulk add
 
@@ -313,17 +313,17 @@ On a switch, **follow** only works with power-on state **match_input**. Changing
 
 Copy settings to other devices uses that same group selector and also runs in the background.
 
-The switches, selects, Identify button, auto-off delay, and MAC and IP sensors that Shelly Bulk adds to each Shelly are enabled. Identify only runs when you press it. If an older install had turned those controls off itself, they are turned back on. A control you disabled stays off.
+The switches, selects, Identify button, auto-off delay, and MAC and IP sensors that Shelly Bulk adds to each Shelly are enabled. Identify only runs when you press it. The one-time upgrade from older versions turns controls back on when this integration had disabled them. A control you disabled stays off, and that check does not run again on later restarts.
 
-Each of those controls sits on a Shelly Bulk device named after the Shelly, not after the hub. When the Shelly has a name in Home Assistant, the device is that name, the MAC, and the IP. Otherwise it is the model, the last four characters of the MAC, and the IP. The name follows a new IP unless you have renamed the device. New entity ids use that name. Entity ids that already exist are not renamed.
+Each of those controls sits on a Shelly Bulk device named after the Shelly, not after the hub, and linked to the core Shelly device. When the Shelly has a name in Home Assistant, the device is that name, the MAC, and the IP. Otherwise it is the model, the last four characters of the MAC, and the IP. The name follows a new IP unless you have renamed the device. The MAC connection itself stays on the core Shelly device, and the MAC sensor shows the same address. New entity ids use that name. Entity ids that already exist are not renamed.
 
 Each core Shelly shows **MAC address** and **IP address** on its device page. The MAC is also under Device info, and **Visit** opens `http://` plus the IP. The IP sensor uses the address the device reports when it is reachable, and otherwise the host stored by the Shelly integration. Labels in Edit a device and in the bulk confirmation use the Home Assistant name, or the model plus the last four characters of the MAC, together with the room, MAC, and IP. The factory hostname is not used as the name.
 
-On each adopted Shelly's device page, **Input behaviour**, **Power-on state**, and **Auto off delay** are enabled. A dimmer also has **Fade rate** and **Transition**. Changing one writes it to the device and shows the value the device read back, so the same controls work on a dashboard. The advanced switches (cloud, Bluetooth, MQTT, and the rest) stay disabled until you enable them.
+On each adopted Shelly's device page, **Input behaviour**, **Power-on state**, and **Auto off delay** are enabled. A dimmer also has **Fade rate** and **Transition**. Changing one writes it to the device and shows the value the device read back, so the same controls work on a dashboard.
 
 ## Advanced settings
 
-Each core Shelly gets config switches and selects: Bluetooth, Bluetooth RPC, scanner mode, cloud, access point, MQTT, eco mode, status LED, debug logging, input behaviour, and power-on state. They are **disabled by default** so a large install does not poll every device. Enable the ones you want on the device page. Changing one reads the new value back from the device.
+Each core Shelly gets config switches and selects: Bluetooth, Bluetooth RPC, scanner mode, cloud, access point, MQTT, eco mode, status LED, debug logging, input behaviour, and power-on state. They are enabled. Changing one reads the new value back from the device.
 
 Scanner mode is the core Shelly option `ble_scanner_mode` (`active`, `auto`, `passive`, `disabled`). The others are Gen2+ RPC. A model without that component is left unchanged and the result says so.
 
