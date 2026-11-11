@@ -8,6 +8,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.shelly_bulk.const import DOMAIN
 from custom_components.shelly_bulk.groups import (
+    companion_device_name,
     RELAY_FIELDS,
     DeviceCard,
     confirmation_text,
@@ -58,12 +59,52 @@ def test_groups_count_models_and_rooms_and_confirm_mac_and_ip() -> None:
     assert "48:F6:EE:BA:6E:FC" in text
 
 
+def test_companion_name_uses_the_shelly_not_the_hub() -> None:
+    named = companion_device_name("Porch", "shelly1pmminig3-48f6eeba6efc", "S3SW-001P8EU", "48F6EEB7C5D8", "192.168.1.20")
+    assert named.startswith("Porch · ")
+    assert "48:F6:EE:B7:C5:D8" in named
+    assert named.endswith("192.168.1.20")
+    assert "shelly1pm" not in named.lower()
+    unnamed = companion_device_name("", "shelly1pmminig3-48f6eeba6efc", "S3SW-001P8EU", "48F6EEB7C5D8", "192.168.1.20")
+    assert unnamed.startswith("1PM Mini Gen3 · C5D8 · ")
+    assert unnamed.endswith("192.168.1.20")
+    assert "Cheviot" not in unnamed
+
+
 def test_only_ticked_fields_are_sent() -> None:
     updates = ticked_updates(
         {"change_input_mode": True, "input_mode": "detached", "change_auto_off": False, "auto_off": True},
         RELAY_FIELDS,
     )
     assert updates == {"input_mode": "detached"}
+
+
+async def test_upgrade_reenables_only_integration_disabled_entities(hass) -> None:
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers.entity_registry import RegistryEntryDisabler
+
+    from custom_components.shelly_bulk import _reenable_integration_disabled
+
+    entry = _entry()
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    integration = registry.async_get_or_create(
+        "switch",
+        DOMAIN,
+        "integration_off",
+        config_entry=entry,
+        disabled_by=RegistryEntryDisabler.INTEGRATION,
+    )
+    user = registry.async_get_or_create(
+        "switch",
+        DOMAIN,
+        "user_off",
+        config_entry=entry,
+        disabled_by=RegistryEntryDisabler.USER,
+    )
+    _reenable_integration_disabled(hass, entry)
+    assert registry.async_get(integration.entity_id).disabled_by is None
+    assert registry.async_get(user.entity_id).disabled_by is RegistryEntryDisabler.USER
 
 
 async def test_mac_sensor_and_visit_link(hass, monkeypatch) -> None:
@@ -90,10 +131,22 @@ async def test_mac_sensor_and_visit_link(hass, monkeypatch) -> None:
     await hass.async_block_till_done()
     mac_states = [item for item in hass.states.async_all("sensor") if item.entity_id.endswith("mac_address")]
     assert mac_states
+    assert "1pm_mini_gen3" in mac_states[0].entity_id
+    assert "example_site" not in mac_states[0].entity_id
     assert mac_states[0].state == display_mac("48F6EEBA6EFC")
-    updated = registry.async_get(device.id)
-    assert (dr.CONNECTION_NETWORK_MAC, "48:f6:ee:ba:6e:fc") in updated.connections
-    assert updated.configuration_url == "http://192.0.2.10"
+    companion = registry.async_get_device(identifiers={("shelly_bulk", f"companion_{shelly.entry_id}")})
+    assert companion is not None
+    assert companion.name == "1PM Mini Gen3 · 6EFC · 192.0.2.10"
+    assert (dr.CONNECTION_NETWORK_MAC, "48:f6:ee:ba:6e:fc") in companion.connections
+    assert companion.configuration_url == "http://192.0.2.10"
+    registry.async_update_device(companion.id, name_by_user="My porch")
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    from custom_components.shelly_bulk.entity import update_companion_device
+
+    update_companion_device(hass, shelly, ip="192.0.2.40")
+    renamed = registry.async_get(companion.id)
+    assert renamed.name_by_user == "My porch"
+    assert renamed.configuration_url == "http://192.0.2.40"
     ip_states = [item for item in hass.states.async_all("sensor") if item.entity_id.endswith("ip_address")]
     assert ip_states[0].state == "192.0.2.10"
     runtime = hass.data[DOMAIN][entry.entry_id]

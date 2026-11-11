@@ -53,7 +53,7 @@ class AdvancedSelect(SelectEntity):
         # Input mode and power-on state are the everyday controls. Scanner mode
         # stays off until someone enables the advanced select.
         common = key in {"input_mode", "power_on_state"}
-        self._attr_entity_registry_enabled_default = common
+        self._attr_entity_registry_enabled_default = True
         self._attr_should_poll = common
         self._attr_unique_id = f"{shelly_entry.entry_id}_{key}"
         self._attr_translation_key = key

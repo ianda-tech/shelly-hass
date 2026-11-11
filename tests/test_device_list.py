@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.helpers.entity_registry import RegistryEntryDisabler
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.shelly_bulk.allowlist import merge_allowlist, parse_allowlist_csv
@@ -185,7 +184,7 @@ async def test_identify_button_is_disabled_for_a_relay(hass, monkeypatch) -> Non
     registry = er.async_get(hass)
     relay_id = registry.async_get_entity_id("button", DOMAIN, f"{relay.entry_id}_identify")
     light_id = registry.async_get_entity_id("button", DOMAIN, f"{light.entry_id}_identify")
-    assert registry.async_get(relay_id).disabled_by is RegistryEntryDisabler.INTEGRATION
+    assert registry.async_get(relay_id).disabled_by is None
     assert registry.async_get(light_id).disabled_by is None
     input_mode = registry.async_get_entity_id("select", DOMAIN, f"{relay.entry_id}_input_mode")
     scanner = registry.async_get_entity_id("select", DOMAIN, f"{relay.entry_id}_scanner_mode")
@@ -193,7 +192,7 @@ async def test_identify_button_is_disabled_for_a_relay(hass, monkeypatch) -> Non
     relay_fade = registry.async_get_entity_id("number", DOMAIN, f"{relay.entry_id}_fade_rate")
     dimmer_fade = registry.async_get_entity_id("number", DOMAIN, f"{light.entry_id}_fade_rate")
     assert registry.async_get(input_mode).disabled_by is None
-    assert registry.async_get(scanner).disabled_by is RegistryEntryDisabler.INTEGRATION
+    assert registry.async_get(scanner).disabled_by is None
     assert registry.async_get(delay).disabled_by is None
     assert relay_fade is None
     assert registry.async_get(dimmer_fade).disabled_by is None

@@ -8,7 +8,6 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, SHELLY_DOMAIN
-from .discover import identify_enabled_by_default
 from .entity import FleetEntity, shelly_device_info
 from .runtime import FleetRuntime
 
@@ -62,8 +61,8 @@ class IdentifyButton(ButtonEntity):
     def __init__(self, runtime: FleetRuntime, shelly_entry) -> None:
         self.runtime = runtime
         self._shelly_entry = shelly_entry
-        model = str(shelly_entry.data.get("model") or shelly_entry.title or "")
-        self._attr_entity_registry_enabled_default = identify_enabled_by_default(model)
+        # A press is the only action. Nothing flashes until the button is pressed.
+        self._attr_entity_registry_enabled_default = True
         self._attr_unique_id = f"{shelly_entry.entry_id}_identify"
         self._attr_device_info = shelly_device_info(runtime.hass, shelly_entry)
 

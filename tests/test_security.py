@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
-from homeassistant.helpers.entity_registry import RegistryEntryDisabler
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.shelly_bulk.const import CONF_FLEET_PASSWORD, CONF_SITE_NAME, DOMAIN
@@ -242,4 +241,4 @@ async def test_advanced_service_reads_back_and_skips_missing_led(hass, monkeypat
     registry = er.async_get(hass)
     cloud = registry.async_get_entity_id("switch", DOMAIN, f"{shelly.entry_id}_cloud")
     assert cloud is not None
-    assert registry.async_get(cloud).disabled_by is RegistryEntryDisabler.INTEGRATION
+    assert registry.async_get(cloud).disabled_by is None

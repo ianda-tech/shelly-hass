@@ -11,6 +11,8 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.entity_registry import RegistryEntryDisabler
 
 from .const import (
     CONF_PROVISIONING_MINUTES,
@@ -59,12 +61,24 @@ def _runtime(hass: HomeAssistant, call: ServiceCall) -> FleetRuntime:
     raise ServiceValidationError("More than one Shelly Bulk entry is set up; pass site")
 
 
+def _reenable_integration_disabled(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Turn entities back on when this integration disabled them.
+
+    A control the user disabled stays off.
+    """
+    registry = er.async_get(hass)
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if entity.disabled_by is RegistryEntryDisabler.INTEGRATION:
+            registry.async_update_entity(entity.entity_id, disabled_by=None)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
     """Set up Shelly Bulk from a config entry."""
     runtime = FleetRuntime(hass, entry)
     await runtime.async_load()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
     entry.runtime_data = runtime
+    _reenable_integration_disabled(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_reload))
     _async_register_services(hass)

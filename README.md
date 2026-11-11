@@ -8,7 +8,7 @@
 [![Latest release](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fianda-tech%2Fshelly-hass%2Fmain%2Fcustom_components%2Fshelly_bulk%2Fmanifest.json&query=%24.version&prefix=v&label=Latest%20release&style=for-the-badge&color=2ea44f)](https://github.com/ianda-tech/shelly-hass/releases/latest)
 [![released](https://img.shields.io/github/release-date/ianda-tech/shelly-hass?label=released&style=for-the-badge)](https://github.com/ianda-tech/shelly-hass/releases/latest)
 
-**Current version: 0.2.5.** Bump this line in the same change as `version` in `custom_components/shelly_bulk/manifest.json`.
+**Current version: 0.2.6.** Bump this line in the same change as `version` in `custom_components/shelly_bulk/manifest.json`.
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![License: MIT](https://img.shields.io/github/license/ianda-tech/shelly-hass)](LICENSE)
@@ -312,6 +312,10 @@ On a switch, **follow** only works with power-on state **match_input**. Changing
 **Configure → Bulk change settings** chooses devices by group: all of them, one model (the list shows how many), one room (including **No room**), only devices that still have the factory hostname, or a short individual pick. The confirmation says how many devices will change and lists each MAC and IP. Every setting starts as leave unchanged. Only ticked fields are sent, and dimmer fields are hidden unless the group includes a dimmer. The form closes straight away. Shelly Bulk updates about five devices at a time, gives each one a timeout, reads the value back, and posts progress to a notification and to the report.
 
 Copy settings to other devices uses that same group selector and also runs in the background.
+
+The switches, selects, Identify button, auto-off delay, and MAC and IP sensors that Shelly Bulk adds to each Shelly are enabled. Identify only runs when you press it. If an older install had turned those controls off itself, they are turned back on. A control you disabled stays off.
+
+Each of those controls sits on a Shelly Bulk device named after the Shelly, not after the hub. When the Shelly has a name in Home Assistant, the device is that name, the MAC, and the IP. Otherwise it is the model, the last four characters of the MAC, and the IP. The name follows a new IP unless you have renamed the device. New entity ids use that name. Entity ids that already exist are not renamed.
 
 Each core Shelly shows **MAC address** and **IP address** on its device page. The MAC is also under Device info, and **Visit** opens `http://` plus the IP. The IP sensor uses the address the device reports when it is reachable, and otherwise the host stored by the Shelly integration. Labels in Edit a device and in the bulk confirmation use the Home Assistant name, or the model plus the last four characters of the MAC, together with the room, MAC, and IP. The factory hostname is not used as the name.
 
