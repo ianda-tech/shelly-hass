@@ -157,7 +157,11 @@ async def test_setup_creates_the_device_list_and_header_only_import_is_empty(has
     path.unlink()
 
 
-async def test_identify_button_is_disabled_for_a_relay(hass) -> None:
+async def test_identify_button_is_disabled_for_a_relay(hass, monkeypatch) -> None:
+    async def _offline(*_args, **_kwargs):
+        raise OSError("offline")
+
+    monkeypatch.setattr("custom_components.shelly_bulk.runtime.FleetRuntime._connect_with_retries", _offline)
     entry = _entry()
     relay = MockConfigEntry(
         domain="shelly",
@@ -183,3 +187,13 @@ async def test_identify_button_is_disabled_for_a_relay(hass) -> None:
     light_id = registry.async_get_entity_id("button", DOMAIN, f"{light.entry_id}_identify")
     assert registry.async_get(relay_id).disabled_by is RegistryEntryDisabler.INTEGRATION
     assert registry.async_get(light_id).disabled_by is None
+    input_mode = registry.async_get_entity_id("select", DOMAIN, f"{relay.entry_id}_input_mode")
+    scanner = registry.async_get_entity_id("select", DOMAIN, f"{relay.entry_id}_scanner_mode")
+    delay = registry.async_get_entity_id("number", DOMAIN, f"{relay.entry_id}_auto_off_delay")
+    relay_fade = registry.async_get_entity_id("number", DOMAIN, f"{relay.entry_id}_fade_rate")
+    dimmer_fade = registry.async_get_entity_id("number", DOMAIN, f"{light.entry_id}_fade_rate")
+    assert registry.async_get(input_mode).disabled_by is None
+    assert registry.async_get(scanner).disabled_by is RegistryEntryDisabler.INTEGRATION
+    assert registry.async_get(delay).disabled_by is None
+    assert relay_fade is None
+    assert registry.async_get(dimmer_fade).disabled_by is None

@@ -26,6 +26,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from .device_settings import CHANNEL_KEYS, channel_updates
 from .security import SECURE_OPTION_DEFAULTS
 from .const import (
     BLE_SCANNER_MODES,
@@ -558,6 +559,168 @@ class ShellyBulkOptionsFlow(OptionsFlow):
             ),
             errors=errors,
         )
+
+    def _fleet(self):
+        return self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+
+    async def async_step_edit_device(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Choose an adopted Shelly, then load its live settings."""
+        runtime = self._fleet()
+        if runtime is None:
+            return self.async_abort(reason="not_loaded")
+        choices = runtime.adopted_device_choices()
+        if not choices:
+            return self.async_abort(reason="no_devices")
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._edit_id = str(user_input["device"])
+            try:
+                live = await runtime.read_device_form(self._edit_id)
+            except Exception:  # noqa: BLE001
+                errors["base"] = "not_reachable"
+            else:
+                picked = next(item for item in choices if item["id"] == self._edit_id)
+                self._edit_supported = live.supported
+                self._edit_values = dict(live.values)
+                self._edit_values["room"] = picked["room"]
+                return await self.async_step_edit_fields()
+        return self.async_show_form(
+            step_id="edit_device",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("device"): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[{"value": item["id"], "label": item["label"]} for item in choices],
+                            mode=SelectSelectorMode.DROPDOWN,
+                            sort=True,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_edit_fields(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show the fields this model supports, pre-filled from the device."""
+        runtime = self._fleet()
+        if runtime is None:
+            return self.async_abort(reason="not_loaded")
+        errors: dict[str, str] = {}
+        details = "none"
+        allowed = set(self._edit_supported) | {"room"}
+        if user_input is not None:
+            values = {key: user_input[key] for key in user_input if key in allowed}
+            try:
+                field_errors = await runtime.save_device_form(self._edit_id, values)
+            except Exception:  # noqa: BLE001
+                errors["base"] = "not_reachable"
+            else:
+                self._edit_values.update(values)
+                if field_errors:
+                    errors = field_errors
+                    details = ", ".join(sorted(field_errors))
+                else:
+                    self._saved_channel = channel_updates(values)
+                    return await self.async_step_copy_settings()
+        return self.async_show_form(
+            step_id="edit_fields",
+            data_schema=self.add_suggested_values_to_schema(
+                _edit_schema(self._edit_supported, self._edit_values),
+                self._edit_values,
+            ),
+            errors=errors,
+            description_placeholders={"details": details},
+        )
+
+    async def async_step_copy_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Optionally apply the channel settings to other devices. Leave the list empty to skip."""
+        runtime = self._fleet()
+        if runtime is None:
+            return self.async_abort(reason="not_loaded")
+        choices = [item for item in runtime.adopted_device_choices() if item["id"] != self._edit_id]
+        errors: dict[str, str] = {}
+        details = "none"
+        if user_input is not None:
+            targets = [str(item) for item in (user_input.get("targets") or []) if str(item) != "_none"]
+            if not targets:
+                return self.async_create_entry(data=dict(self.config_entry.options))
+            problems = await runtime.copy_channel_settings(targets, self._saved_channel)
+            if not problems:
+                return self.async_create_entry(data=dict(self.config_entry.options))
+            errors["base"] = "not_applied"
+            details = "; ".join(f"{entry_id}: {message}" for entry_id, message in problems.items())
+        return self.async_show_form(
+            step_id="copy_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional("targets", default=[]): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[{"value": item["id"], "label": item["label"]} for item in choices] or [{"value": "_none", "label": "No other devices"}],
+                            multiple=True,
+                            mode=SelectSelectorMode.DROPDOWN,
+                            sort=True,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={"details": details},
+        )
+
+
+_EDIT_NUMBERS = {
+    "auto_on_delay": (0, 86400, 0.5),
+    "auto_off_delay": (0, 86400, 0.5),
+    "fade_rate": (1, 5, 1),
+    "transition_duration": (0, 10800, 0.5),
+    "transition_up": (0, 10800, 0.5),
+    "transition_down": (0, 10800, 0.5),
+    "min_brightness": (0, 100, 1),
+    "max_brightness": (0, 100, 1),
+    "night_brightness": (1, 100, 1),
+}
+_EDIT_CHOICES = {
+    "input_type": [("switch", "Switch"), ("button", "Button")],
+    "input_mode": [
+        ("follow", "Follow"),
+        ("flip", "Toggle / flip"),
+        ("momentary", "Momentary"),
+        ("detached", "Detached"),
+        ("activate", "Activation"),
+        ("dim", "Dim"),
+        ("dual_dim", "Dual dim"),
+    ],
+    "initial_state": [
+        ("off", "Off"),
+        ("on", "On"),
+        ("restore_last", "Restore last"),
+        ("match_input", "Match input"),
+        ("toggle", "Toggle"),
+    ],
+}
+
+
+def _edit_schema(supported: tuple[str, ...] | list[str], values: dict[str, Any]) -> vol.Schema:
+    """Build a form that contains only the fields this device returned."""
+    shown = [key for key in ("name", "room", *CHANNEL_KEYS) if key == "room" or key in supported]
+    schema: dict[Any, Any] = {}
+    for key in shown:
+        current = values.get(key)
+        if key in {"invert", "auto_on", "auto_off", "night_mode"}:
+            schema[vol.Required(key, default=bool(current))] = BooleanSelector()
+        elif key in _EDIT_NUMBERS:
+            low, high, step = _EDIT_NUMBERS[key]
+            default = current if current not in (None, "") else low
+            schema[vol.Required(key, default=default)] = _number(low, high, step)
+        elif key in _EDIT_CHOICES:
+            options = list(_EDIT_CHOICES[key])
+            known = {item[0] for item in options}
+            if current and str(current) not in known:
+                options.append((str(current), str(current)))
+            schema[vol.Required(key, default=str(current or options[0][0]))] = _choice(options)
+        else:
+            schema[vol.Optional(key, default=str(current or ""))] = TextSelector()
+    return vol.Schema(schema)
 
 
 def _valid_timezone(value: str) -> bool:

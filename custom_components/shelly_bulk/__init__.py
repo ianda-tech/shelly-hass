@@ -30,7 +30,7 @@ from .const import (
 from .runtime import FleetRuntime
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [Platform.BUTTON, Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS = [Platform.BUTTON, Platform.NUMBER, Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
 
 CONFIG_ENTRY = ConfigEntry[FleetRuntime]
 

@@ -54,7 +54,8 @@ from .const import (
     STORAGE_VERSION,
     VERSION,
 )
-from .device_list import append_device_rows, ensure_device_list, placeholder_name
+from .device_list import append_device_rows, ensure_device_list, placeholder_name, update_device_row
+from .device_settings import apply_live_settings, channel_updates, read_live_settings
 from .discover import heard_from_advert, identify_output, rows_for_discovery
 from .models import AllowDevice, Allowlist, ChannelSettings
 from .advanced import read_setting, scanner_mode_valid, write_setting
@@ -442,6 +443,130 @@ class FleetRuntime:
             ]
             message = "\n".join(lines) + extra
         self._notify("Find my Shelly", message, "shelly_bulk_find")
+
+    def adopted_device_choices(self) -> list[dict[str, str]]:
+        """Label each core Shelly as name, room, model, and MAC."""
+        area_reg = ar.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
+        choices: list[dict[str, str]] = []
+        for entry in self.hass.config_entries.async_entries(SHELLY_DOMAIN):
+            devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+            device = next((item for item in devices if item.via_device_id is None), None)
+            if device is None and devices:
+                device = devices[0]
+            name = ""
+            room = ""
+            if device is not None:
+                name = device.name_by_user or device.name or ""
+                if device.area_id:
+                    area = area_reg.async_get_area(device.area_id)
+                    room = area.name if area else ""
+            if not name:
+                name = entry.title or "Shelly"
+            model = str(entry.data.get("model") or "unknown model")
+            mac = ""
+            if entry.unique_id:
+                try:
+                    mac = display_mac(entry.unique_id)
+                except ValueError:
+                    mac = str(entry.unique_id)
+            label = " · ".join(part for part in (name, room or "no room", model, mac) if part)
+            choices.append({"id": entry.entry_id, "label": label, "room": room, "model": model})
+        return choices
+
+    async def read_device_form(self, entry_id: str):
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != SHELLY_DOMAIN:
+            raise ServiceValidationError("That Shelly is not installed")
+        session = await self._open_shelly(entry)
+        try:
+            return await read_live_settings(session)
+        finally:
+            await session.shutdown()
+
+    async def save_device_form(self, entry_id: str, values: dict[str, Any]) -> dict[str, str]:
+        """Apply the form, then update Home Assistant and the device list row."""
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != SHELLY_DOMAIN:
+            raise ServiceValidationError("That Shelly is not installed")
+        rpc_values = {key: value for key, value in values.items() if key != "room"}
+        session = await self._open_shelly(entry)
+        try:
+            errors = await apply_live_settings(session, rpc_values)
+        finally:
+            await session.shutdown()
+        name = "" if "name" in errors else str(values.get("name") or "")
+        room = str(values.get("room") or "")
+        if ("name" in values and "name" not in errors) or "room" in values:
+            await self._assign_name_area(entry, name, room)
+        csv_changes: dict[str, str] = {}
+        if "name" in values and "name" not in errors:
+            csv_changes["name"] = name
+        if "room" in values:
+            csv_changes["room"] = room
+        if "input_mode" in values and "input_mode" not in errors:
+            csv_changes["input"] = str(values["input_mode"])
+        if "initial_state" in values and "initial_state" not in errors:
+            csv_changes["initial_state"] = str(values["initial_state"])
+        if "fade_rate" in values and "fade_rate" not in errors:
+            csv_changes["fade_rate"] = str(values["fade_rate"])
+        if "transition_duration" in values and "transition_duration" not in errors:
+            csv_changes["transition"] = str(values["transition_duration"])
+        if csv_changes and entry.unique_id:
+            await self._write_csv_changes(str(entry.unique_id), csv_changes)
+        self.notify()
+        return errors
+
+    async def copy_channel_settings(self, entry_ids: list[str], values: dict[str, Any]) -> dict[str, str]:
+        """Apply channel settings to other devices. Names and rooms are not copied."""
+        updates = channel_updates(values)
+        problems: dict[str, str] = {}
+        for entry_id in entry_ids:
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is None or entry.domain != SHELLY_DOMAIN:
+                problems[entry_id] = "missing"
+                continue
+            session = await self._open_shelly(entry)
+            try:
+                field_errors = await apply_live_settings(session, updates)
+            finally:
+                await session.shutdown()
+            if field_errors:
+                problems[entry_id] = ", ".join(sorted(field_errors))
+                continue
+            csv_changes: dict[str, str] = {}
+            if "input_mode" in updates:
+                csv_changes["input"] = str(updates["input_mode"])
+            if "initial_state" in updates:
+                csv_changes["initial_state"] = str(updates["initial_state"])
+            if "fade_rate" in updates:
+                csv_changes["fade_rate"] = str(updates["fade_rate"])
+            if "transition_duration" in updates:
+                csv_changes["transition"] = str(updates["transition_duration"])
+            if csv_changes and entry.unique_id:
+                await self._write_csv_changes(str(entry.unique_id), csv_changes)
+        return problems
+
+    async def _write_csv_changes(self, mac: str, changes: dict[str, str]) -> None:
+        path = self.device_list_path()
+
+        def _update() -> bool:
+            return update_device_row(path, mac, changes)
+
+        updated = await self.hass.async_add_executor_job(_update)
+        if not updated:
+            row = {"mac": mac, "name": "", "room": "", "model_hint": ""}
+            row.update(changes)
+            await self.append_listed_devices([row])
+            return
+        device = self.allowlist.get(mac)
+        if device is not None:
+            if "name" in changes:
+                device.name = changes["name"]
+            if "room" in changes:
+                device.room = changes["room"]
+        self._list_mtime = await self.hass.async_add_executor_job(lambda: path.stat().st_mtime if path.is_file() else None)
+        self._store.async_delay_save(self._store_data, 0.1)
 
     async def async_import_allowlist(self, filename: str, replace: bool = True) -> int:
         path = resolve_config_path(self.hass.config.path(), filename)

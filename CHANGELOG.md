@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.3
+
+- Configure → Edit a device reads the live settings from an adopted Shelly and writes back only the fields that model reports. The Home Assistant name and area, and the devices.csv row, are updated. Each field that the device does not keep is shown as an error.
+- After that form, the same channel settings can be copied to other devices. The list is labelled with the model. Names and rooms are not copied.
+- Each adopted Shelly has an input mode select, a power-on state select, and an auto-off delay number, enabled by default. Dimmers also have fade rate and transition numbers. The value shown is the one read back from the device. The existing advanced switches stay disabled until enabled.
+
 ## 0.2.2
 
 - `config/shelly_bulk/devices.csv` is created on setup and on load when it is missing. The new file is a header plus comments, with no real devices. An existing file is never overwritten. A header-only import is an empty list. Import defaults to that path. Reload device list, and a change to the file's modification time, merge the CSV without wiping names you already stored. Configure → Add device appends one MAC.

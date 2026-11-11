@@ -66,7 +66,8 @@
           "dimmers": "Dimmer profile",
           "provisioning": "Provisioning",
           "allowlist": "Import allowlist",
-          "add_device": "Add device"
+          "add_device": "Add device",
+          "edit_device": "Edit a device"
         }
       },
       "wifi": {
@@ -193,6 +194,46 @@
           "name": "Optional. Leave blank and fill it in later.",
           "room": "Optional Home Assistant area name."
         }
+      },
+      "edit_device": {
+        "title": "Edit a device",
+        "description": "Pick an adopted Shelly. The next form is filled with the settings read from that device.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "edit_fields": {
+        "title": "Device settings",
+        "description": "Only settings this model reports are shown. Saving writes them back and checks the device returned the same value. Fields that were not accepted: {details}.",
+        "data": {
+          "name": "Name",
+          "room": "Room",
+          "input_type": "Input type",
+          "input_mode": "Input behaviour",
+          "invert": "Invert",
+          "initial_state": "Power-on state",
+          "auto_on": "Auto on",
+          "auto_on_delay": "Auto on delay (seconds)",
+          "auto_off": "Auto off",
+          "auto_off_delay": "Auto off delay (seconds)",
+          "fade_rate": "Fade rate (1-5)",
+          "transition_duration": "Transition (seconds)",
+          "transition_up": "Ramp up (seconds)",
+          "transition_down": "Ramp down (seconds)",
+          "min_brightness": "Minimum brightness",
+          "max_brightness": "Maximum brightness",
+          "night_mode": "Night mode",
+          "night_brightness": "Night brightness",
+          "night_start": "Night mode start (HH:MM)",
+          "night_end": "Night mode end (HH:MM)"
+        }
+      },
+      "copy_settings": {
+        "title": "Copy settings to other devices",
+        "description": "Apply the same channel settings to other Shellies. The list is labelled with the model, so you can filter by it. Leave it empty to keep the change on the device you just edited. Problems: {details}.",
+        "data": {
+          "targets": "Other devices"
+        }
       }
     },
     "error": {
@@ -203,11 +244,14 @@
       "invalid_csv": "The CSV could not be read. It needs a mac column.",
       "outside_config": "The path must stay inside the Home Assistant config directory.",
       "invalid_mac": "Enter a 12-digit MAC address.",
-      "already_listed": "That MAC is already on the device list. Edit the CSV to change its name or room."
+      "already_listed": "That MAC is already on the device list. Edit the CSV to change its name or room.",
+      "not_applied": "The device did not keep this value. It was left as it is.",
+      "not_reachable": "Shelly Bulk could not open this device. Check that it is online."
     },
     "abort": {
       "allowlist_imported": "Imported {count} devices into this Home Assistant instance.",
-      "not_loaded": "Shelly Bulk is not loaded yet. Finish setup and try again."
+      "not_loaded": "Shelly Bulk is not loaded yet. Finish setup and try again.",
+      "no_devices": "No Shelly devices have been added yet."
     }
   },
   "entity": {
@@ -262,6 +306,11 @@
       "find_shelly": {"name": "Find my Shelly"},
       "reload_device_list": {"name": "Reload device list"},
       "identify": {"name": "Identify"}
+    },
+    "number": {
+      "auto_off_delay": {"name": "Auto off delay"},
+      "fade_rate": {"name": "Fade rate"},
+      "transition_duration": {"name": "Transition"}
     }
   },
   "issues": {

@@ -9,6 +9,17 @@ from typing import Any
 
 from .const import BLE_SCANNER_MODES, DIMMER_COMPONENTS, OUTPUT_COMPONENTS
 
+_CHANNEL_READ = {
+    "input_mode": "in_mode",
+    "power_on_state": "initial_state",
+    "auto_on": "auto_on",
+    "auto_off": "auto_off",
+    "auto_on_delay": "auto_on_delay",
+    "auto_off_delay": "auto_off_delay",
+    "fade_rate": "button_fade_rate",
+    "transition_duration": "transition_duration",
+}
+
 SWITCH_SETTINGS = (
     "bluetooth",
     "ble_rpc",
@@ -86,20 +97,15 @@ async def read_setting(session: Any, key: str, *, channel: int = 0) -> Any:
         websocket = debug.get("websocket") if isinstance(debug.get("websocket"), dict) else {}
         udp = debug.get("udp") if isinstance(debug.get("udp"), dict) else {}
         return bool(mqtt.get("enable") or websocket.get("enable") or udp.get("addr"))
-    if key == "input_mode":
+    if key in _CHANNEL_READ:
         kind = _output_kind(config, channel)
         if kind is None:
             return None
         namespace = {"switch": "Switch", "light": "Light", "rgb": "RGB", "rgbw": "RGBW", "cct": "CCT"}[kind]
         current = await _read(session, f"{namespace}.GetConfig", {"id": channel})
-        return current.get("in_mode") if isinstance(current, dict) else None
-    if key == "power_on_state":
-        kind = _output_kind(config, channel)
-        if kind is None:
+        if not isinstance(current, dict) or _CHANNEL_READ[key] not in current:
             return None
-        namespace = {"switch": "Switch", "light": "Light", "rgb": "RGB", "rgbw": "RGBW", "cct": "CCT"}[kind]
-        current = await _read(session, f"{namespace}.GetConfig", {"id": channel})
-        return current.get("initial_state") if isinstance(current, dict) else None
+        return current.get(_CHANNEL_READ[key])
     if key == "device_name":
         sys_cfg = await _read(session, "Sys.GetConfig")
         device = sys_cfg.get("device") if isinstance(sys_cfg, dict) else None
@@ -169,18 +175,31 @@ async def write_setting(session: Any, key: str, value: Any, *, channel: int = 0)
     if key == "device_name":
         await session.call("Sys.SetConfig", {"config": {"device": {"name": str(value)}}})
         return await read_setting(session, key), None
-    if key in {"input_mode", "power_on_state", "input_type", "auto_on", "auto_off", "fade_rate", "transition_duration"}:
+    if key in {
+        "input_mode",
+        "power_on_state",
+        "input_type",
+        "auto_on",
+        "auto_off",
+        "auto_on_delay",
+        "auto_off_delay",
+        "fade_rate",
+        "transition_duration",
+        "invert",
+    }:
         return await _write_channel(session, config, key, value, channel)
     return None, f"Unknown setting {key}"
 
 
 async def _write_channel(session: Any, config: dict[str, Any], key: str, value: Any, channel: int) -> tuple[Any, str | None]:
-    if key == "input_type":
+    if key in {"input_type", "invert"}:
         if _component(config, "input", channel) is None:
             return None, f"input:{channel} is not present"
-        await session.call("Input.SetConfig", {"id": channel, "config": {"type": value}})
+        field = "type" if key == "input_type" else "invert"
+        sent = bool(value) if key == "invert" else value
+        await session.call("Input.SetConfig", {"id": channel, "config": {field: sent}})
         read = await session.call("Input.GetConfig", {"id": channel})
-        return (read.get("type") if isinstance(read, dict) else None), None
+        return (read.get(field) if isinstance(read, dict) else None), None
     kind = _output_kind(config, channel)
     if kind is None:
         return None, f"No output on channel {channel}"
@@ -194,6 +213,10 @@ async def _write_channel(session: Any, config: dict[str, Any], key: str, value: 
         payload["auto_on"] = bool(value)
     elif key == "auto_off":
         payload["auto_off"] = bool(value)
+    elif key == "auto_on_delay":
+        payload["auto_on_delay"] = float(value)
+    elif key == "auto_off_delay":
+        payload["auto_off_delay"] = float(value)
     elif key == "fade_rate":
         if kind not in DIMMER_COMPONENTS:
             return None, f"{kind}:{channel} is not a dimmer"
@@ -211,6 +234,8 @@ async def _write_channel(session: Any, config: dict[str, Any], key: str, value: 
         "power_on_state": "initial_state",
         "auto_on": "auto_on",
         "auto_off": "auto_off",
+        "auto_on_delay": "auto_on_delay",
+        "auto_off_delay": "auto_off_delay",
         "fade_rate": "button_fade_rate",
         "transition_duration": "transition_duration",
     }[key]

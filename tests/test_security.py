@@ -112,9 +112,6 @@ async def test_secure_devices_rotates_password_and_reconnects(hass, monkeypatch)
         data={CONF_HOST: "192.0.2.10", CONF_PORT: 80},
     )
     shelly.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    runtime = hass.data[DOMAIN][entry.entry_id]
     fake = FakeSession()
     opens: list[tuple] = []
 
@@ -123,6 +120,9 @@ async def test_secure_devices_rotates_password_and_reconnects(hass, monkeypatch)
         return fake
 
     monkeypatch.setattr("custom_components.shelly_bulk.runtime.async_open_rpc", _open)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    runtime = hass.data[DOMAIN][entry.entry_id]
 
     result = await hass.services.async_call(
         DOMAIN,
@@ -175,8 +175,6 @@ async def test_secure_devices_leaves_an_existing_password_unchanged(hass, monkey
         data={CONF_HOST: "192.0.2.10", CONF_PORT: 80, CONF_USERNAME: "admin", CONF_PASSWORD: stored},
     )
     shelly.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
     fake = FakeSession()
     fake._shelly["auth_en"] = True
 
@@ -184,6 +182,8 @@ async def test_secure_devices_leaves_an_existing_password_unchanged(hass, monkey
         return fake
 
     monkeypatch.setattr("custom_components.shelly_bulk.runtime.async_open_rpc", _open)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
     result = await hass.services.async_call(
         DOMAIN,
         "secure_devices",
@@ -214,14 +214,14 @@ async def test_advanced_service_reads_back_and_skips_missing_led(hass, monkeypat
         data={CONF_HOST: "192.0.2.10", CONF_PORT: 80, CONF_USERNAME: "admin", CONF_PASSWORD: PASSWORD},
     )
     shelly.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
     fake = FakeSession()
 
     async def _open(*_args, **_kwargs):
         return fake
 
     monkeypatch.setattr("custom_components.shelly_bulk.runtime.async_open_rpc", _open)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
     result = await hass.services.async_call(
         DOMAIN,
         "set_advanced",

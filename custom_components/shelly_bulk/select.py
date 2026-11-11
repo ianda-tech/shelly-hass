@@ -37,14 +37,17 @@ class AdvancedSelect(SelectEntity):
     """One documented choice for a single Shelly. Disabled until the user enables it."""
 
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_entity_registry_enabled_default = False
-    _attr_should_poll = False
     _attr_has_entity_name = True
 
     def __init__(self, runtime: FleetRuntime, shelly_entry: ConfigEntry, key: str) -> None:
         self.runtime = runtime
         self._shelly_entry = shelly_entry
         self._key = key
+        # Input mode and power-on state are the everyday controls. Scanner mode
+        # stays off until someone enables the advanced select.
+        common = key in {"input_mode", "power_on_state"}
+        self._attr_entity_registry_enabled_default = common
+        self._attr_should_poll = common
         self._attr_unique_id = f"{shelly_entry.entry_id}_{key}"
         self._attr_translation_key = key
         self._attr_options = _OPTIONS[key]
@@ -61,6 +64,9 @@ class AdvancedSelect(SelectEntity):
         return self._current
 
     async def async_added_to_hass(self) -> None:
+        await self.async_update()
+
+    async def async_update(self) -> None:
         await self._refresh()
 
     async def _refresh(self) -> None:
