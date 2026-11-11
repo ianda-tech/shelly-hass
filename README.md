@@ -15,7 +15,7 @@
 
 Shelly Bulk (`shelly_bulk`) is a [HACS](https://hacs.xyz/) custom integration for installers who commission a lot of factory-new Shelly devices into [Home Assistant](https://www.home-assistant.io/). It sits **beside** the built-in Shelly integration. It does not replace it, and it does not speak a private provisioning protocol when Home Assistant already can.
 
-You enter every site value yourself, after install, on the Home Assistant instance that will own the devices: Wi-Fi name and password, the device password, timezone, and the list of MAC addresses, names, and rooms. None of that is shipped in this repository.
+You enter every site value yourself, after install, on the Home Assistant instance that will own the devices: Wi-Fi name and password, the device login password, timezone, and the list of MAC addresses, names, and rooms. None of that is shipped in this repository.
 
 ## What it does, and why
 
@@ -56,7 +56,7 @@ Profiles are sent with Gen2+ RPC (`Sys.SetConfig`, `WiFi.SetConfig`, `Cloud.SetC
 - An IoT SSID that is **2.4 GHz** and not WPA3-only. 5 GHz-only, band steering, captive portals, and client isolation break the join.
 - DHCP space for the whole batch.
 - mDNS (or a reflector) between the IoT VLAN and Home Assistant. After Wi-Fi provisioning, core Shelly waits for the device to announce itself. Without mDNS the flow falls back to an active lookup and often times out.
-- Admin access to Home Assistant. Shelly Bulk writes the core Shelly config entry (scanner mode, and the device password after `Shelly.SetAuth`).
+- Admin access to Home Assistant. Shelly Bulk writes the core Shelly config entry (scanner mode, and username `admin` plus the device login password after `Shelly.SetAuth`).
 
 ## Quick install
 
@@ -80,7 +80,7 @@ Every value below is typed into **this** Home Assistant. The integration package
 
 1. Start the config flow. Give the entry a site name. That name is only a label.
 2. Enter the Wi-Fi SSID and password the new Shellies should join. They are stored in the config entry. Diagnostics and logs mask them.
-3. Optionally enter one device password. Leave it blank if these devices should stay without authentication. Shelly Bulk will not change a device that already has a password.
+3. Optionally enter one **device login password (admin)**. This is not the Wi-Fi password. See [Device login (auth)](#device-login-auth). Leave it blank and new devices stay open, with no login.
 4. Timezone is optional. The box is pre-filled from this Home Assistant instance, the zone under **Settings → System → General**. It is not a value shipped with the integration. The format is an IANA tz database name, case-sensitive, `Region/City`. Examples: `Australia/Melbourne`, `Australia/Sydney`, `Europe/London`. Abbreviations such as `AEDT` and offsets such as `UTC+11` are rejected. The list is the TZ identifier column on [Wikipedia's tz database list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). It sets the device clock zone for on-device schedules and sunrise/sunset, which matters more when Shelly Cloud is off because the device will not auto-detect a zone. Leave it blank and adoption still works: no `location.tz` is sent. Change or clear it later under **Configure → Security and timezone**.
 5. On the next step, choose the generic behaviour:
    - **Disable Shelly Cloud** and **disable the access point** default to on.
@@ -90,6 +90,25 @@ Every value below is typed into **this** Home Assistant. The integration package
    - Concurrency, retries, and how long provisioning mode stays armed.
 
 You can change all of this later under **Configure** on the integration card: Wi-Fi, security, input profile, output profile, dimmer profile, provisioning, and allowlist import.
+
+## Device login (auth)
+
+One password, shared by the devices Shelly Bulk sets up. The username is always `admin`. It is the password for each Shelly's local web page and its local API. After Shelly Bulk sets it, `admin` and that password are written onto that device's core Shelly config entry, so Home Assistant stays connected.
+
+Leave the field blank and devices stay open, with no login.
+
+Saving a new password under **Configure → Security and timezone** or **Configure → Secure profile** only stores it on the Shelly Bulk entry. It does not re-key devices. Put the password in your password manager. Shelly Bulk cannot recover a lost password. Recovering the device means a factory reset.
+
+The **Security audit** sensor stays `not_audited` until you run **Audit security** or **Secure devices**. After that, its attributes list each device. `auth_on: false` means that Shelly has no login.
+
+| Scenario | What happens |
+| --- | --- |
+| New or factory device during adoption, password filled in | `Shelly.SetAuth` sets username `admin` and this password. Shelly Bulk saves both onto the core Shelly entry. |
+| New or factory device, password left blank | The device stays open. No login is set. |
+| Existing device with no password, and you run **Secure devices** or **Apply profile** | The stored password is applied, then saved onto that Shelly entry. Secure devices does this only when **Set the device login when a device has none** is on. |
+| Existing device that already has a password | The device password is not changed. Home Assistant keeps using the password already stored on that Shelly entry. |
+| You change the password in Configure | The new value is stored for the next device that still has no login. Devices that already have a password are not re-keyed. |
+| The password is lost | Factory-reset the Shelly. Shelly Bulk will not guess, and it will not overwrite a device that already has a login. |
 
 ### Device list
 
@@ -130,7 +149,7 @@ Shelly Bulk raises a repair and sets the last-error sensor when an allowlisted d
    - wait while core Shelly provisions Wi-Fi and creates the device
    - set that Shelly's Bluetooth scanner to the mode you chose, so the next devices are heard further away
    - apply cloud, access point, Bluetooth RPC, timezone, name, and any channel profile you enabled
-   - if you set a device password, call `Shelly.SetAuth` and write `admin` plus that password into the core Shelly entry so Home Assistant stays connected
+   - if you set a device login password, call `Shelly.SetAuth` (username `admin`) and write `admin` plus that password into the core Shelly entry so Home Assistant stays connected. A blank password leaves the device open
    - set the Home Assistant device name and area from the CSV
 6. Watch **Devices adopted**, **Devices pending**, **Devices failed**, and **Last error**.
 7. Export a report (below). Power-cycle anything that failed because the window closed, then run provisioning again. Devices already added are left alone. Devices that already have authentication are not sent a password and are not modified during adoption.
@@ -142,13 +161,13 @@ Firmware update, if you enabled it, starts `Shelly.Update` with `stage: stable` 
 
 ## Profiles
 
-Profiles are off until you opt in. Security choices from the config flow (cloud, access point, Bluetooth RPC, timezone, device password, scanner mode) are applied on adoption because you set them there. Input, output, and dimmer sections are applied only when **Apply this profile** is on, or when a CSV row sets the same field for that device.
+Profiles are off until you opt in. Security choices from the config flow (cloud, access point, Bluetooth RPC, timezone, device login password, scanner mode) are applied on adoption because you set them there. The login password is applied only when the device has no login. Input, output, and dimmer sections are applied only when **Apply this profile** is on, or when a CSV row sets the same field for that device.
 
 Open **Configure** and edit one section at a time.
 
 ### Security
 
-- **Device password.** `Shelly.SetAuth` with user `admin`, realm set to the device id, and HA1 `SHA-256("admin:<device id>:<password>")`. The password is not logged. If the device already has authentication, Shelly Bulk does not replace it.
+- **Device login password (admin).** `Shelly.SetAuth` with username `admin`, realm set to the device id, and HA1 `SHA-256("admin:<device id>:<password>")`. The password is not logged. It is sent only when the device has no login. A device that already has a password is not changed, and Home Assistant keeps the password already stored on that Shelly entry. See [Device login (auth)](#device-login-auth).
 - **Cloud.** `Cloud.SetConfig` with `enable: false` when disable-cloud is on. Unchecking it leaves the cloud setting as the device has it.
 - **Access point.** Core Shelly turns the AP off after Bluetooth provisioning. Shelly Bulk sends your choice afterwards, so unchecking the box turns the AP back on.
 - **Bluetooth RPC.** Same pattern. `BLE.SetConfig` keeps Bluetooth **enabled** (`enable: true`) so the scanner still works, and sets `rpc.enable` from your checkbox.
@@ -195,13 +214,13 @@ On light-like channels, when the dimmer profile is on:
 
 ## Securing devices
 
-The secure profile is a checklist, not a silent change. Set the device password under **Configure → Security and timezone** or **Configure → Secure profile**. Leave the password box blank to keep the stored one. Then run **Secure devices**, or call `shelly_bulk.secure_devices`. You can secure one device, an area, or every core Shelly.
+The secure profile is a checklist, not a silent change. Set the device login password under **Configure → Security and timezone** or **Configure → Secure profile**. Typing a password there only stores it. It does not re-key devices. Leave the box blank to keep the stored password. Then run **Secure devices**, or call `shelly_bulk.secure_devices`. You can secure one device, an area, or every core Shelly.
 
-Shelly Bulk applies the calls, reads each setting back, updates the core Shelly entry with `admin` and the new password when authentication changed, and opens the device again to confirm the password works. The password and the HA1 digest are not written to logs, diagnostics, or the audit.
+Shelly Bulk applies the calls and reads each setting back. `Shelly.SetAuth` runs only for a device that has no login, and only when that checklist item is on. The username written to the device and to the core Shelly entry is `admin`. Devices that already have a password are left unchanged, and Home Assistant keeps the password already stored for them. The password and the HA1 digest are not written to logs, diagnostics, or the audit.
 
 | Checklist item | RPC | Default |
 | --- | --- | --- |
-| Set or rotate the device password | `Shelly.SetAuth` (user `admin`, realm = device id, HA1 = SHA-256 of `admin:id:password`) | On |
+| Set the device login when a device has none | `Shelly.SetAuth` (username `admin`, realm = device id, HA1 = SHA-256 of `admin:id:password`). Skipped when the device already has a login | On |
 | Disable Shelly Cloud | `Cloud.SetConfig` `enable: false` | On |
 | Disable the Wi-Fi access point | `WiFi.SetConfig` `ap.enable: false` | On |
 | Disable Bluetooth RPC, keep Bluetooth | `BLE.SetConfig` `enable: true`, `rpc.enable: false` | On |
@@ -209,9 +228,9 @@ Shelly Bulk applies the calls, reads each setting back, updates the core Shelly 
 | Disable outbound websocket | `Ws.SetConfig` `enable: false` | Off |
 | Disable debug and UDP logging | `Sys.SetConfig` `debug.*` off and `rpc_udp.listen_port: null` | On |
 | Keep firmware updates manual | Does not call `Shelly.Update`. Gen2+ has no documented auto-update switch; cloud push stops when cloud is off | Off |
-| Restrict the web UI | `Sys.SetConfig` `device.discoverable: false`. The page itself is gated by the device password | Off |
+| Restrict the web UI | `Sys.SetConfig` `device.discoverable: false`. The page itself asks for the device login when a password is set | Off |
 
-`audit_security` only reads. The **Security audit** sensor shows `passed/total` and the same fields per device: auth on, cloud off, access point off, Bluetooth RPC off, firmware version.
+`audit_security` only reads. The **Security audit** sensor shows `passed/total` (or `not_audited` before the first audit). Each device row includes `auth_on`. `false` means that Shelly has no login. The other fields are cloud off, access point off, Bluetooth RPC off, and firmware version.
 
 ```yaml
 action: shelly_bulk.secure_devices
@@ -374,7 +393,7 @@ A device that is advertising with Bluetooth RPC off raises **Shelly setup window
 | `cannot_connect` | Nothing that can open GATT heard the device. A Shelly scanner is not enough on its own. Move a connectable proxy closer. |
 | Timed out waiting for Wi-Fi | Wrong SSID or password, 5 GHz or WPA3-only SSID, no DHCP, or mDNS not reaching Home Assistant. |
 | `skipped_auth` | The device already has a password, or the advertisement says authentication is on. Shelly Bulk did not send credentials and did not change it. Factory-reset if you meant to adopt it. |
-| Adopted, then core Shelly wants a reauth | The device password was set. Reload the Shelly entry; Shelly Bulk writes the password onto that entry after `Shelly.SetAuth`. If the device rebooted mid-write, enter the device password in the Shelly reauth form. |
+| Adopted, then core Shelly wants a reauth | The device login was set. Shelly Bulk writes `admin` and that password onto the Shelly entry after `Shelly.SetAuth`. If the device rebooted mid-write, enter that same password in the Shelly reauth form. |
 | Dimmer fade "skipped" | That model has no `button_fade_rate` or `transition_duration`. The note in the report names the field. |
 | Power-on brightness not sent | The component config has no brightness field Shelly Bulk is willing to guess. |
 | Many identical devices, the wrong one joined | Use the allowlist. Shelly Bulk will not adopt a MAC that is not on it while that option is on. |
@@ -392,7 +411,10 @@ No. Devices are added by core Shelly. Shelly Bulk only answers the Bluetooth flo
 They help you *hear* the next ones. They do not connect to them. Keep a connectable adapter or ESPHome proxy in the chain.
 
 **Can I adopt a device that already has a password?**
-Not automatically. Shelly Bulk will not try the device password against a locked device. Add it yourself in core Shelly, then use **Apply profile** if that Shelly entry already has the right password stored. Apply profile still will not replace an existing device password.
+Not automatically. Shelly Bulk will not try the device login password against a locked device. Add it yourself in core Shelly. Apply profile and Secure devices still will not replace an existing device password. Home Assistant keeps using the password already stored on that Shelly entry.
+
+**Does changing the device login password in Configure update devices that already have one?**
+No. Configure only stores the new password on the Shelly Bulk entry. It is used the next time a device with no login is adopted, or when you run Secure devices or Apply profile against a device that still has no login.
 
 **Where do the secrets live?**
 On the Shelly Bulk config entry in Home Assistant's `.storage`, the same way other integrations store passwords. They are masked in diagnostics and in this integration's logs. Do not put them in the CSV. Do not commit a CSV.

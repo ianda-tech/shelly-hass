@@ -178,6 +178,12 @@ async def apply_secure_profile(
     if not profile.rotate_password:
         return False
     shelly = dict(getattr(session, "shelly", {}) or {})
+    if shelly.get("auth_en"):
+        notes.append(
+            "Device already has a login. The password was not changed. "
+            "Home Assistant keeps the password stored on the Shelly entry."
+        )
+        return False
     device_id = str(shelly.get("id") or "")
     if not device_id:
         info = await _try_call(session, "Shelly.GetDeviceInfo", None, notes, "device id", redact)

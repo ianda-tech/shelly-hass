@@ -3,19 +3,19 @@
     "step": {
       "user": {
         "title": "Site",
-        "description": "Wi-Fi and the device password are entered here and are not shipped with the integration. Timezone is optional and is pre-filled from this Home Assistant instance ({ha_timezone}). Clear it to send no zone.",
+        "description": "Wi-Fi and the device login password are entered here and are not shipped with the integration. The login username is always admin. Leave the password blank and new devices stay open, with no login. It is applied when a new or factory device is adopted. Store it in a password manager: a lost password needs a factory reset. Timezone is optional and is pre-filled from this Home Assistant instance ({ha_timezone}). Clear it to send no zone.",
         "data": {
           "site_name": "Site name",
           "wifi_ssid": "Wi-Fi SSID",
           "wifi_password": "Wi-Fi password",
-          "fleet_password": "Device password",
+          "fleet_password": "Device login password (admin)",
           "timezone": "Timezone"
         },
         "data_description": {
           "site_name": "A label for this Shelly Bulk entry, shown in Home Assistant.",
           "wifi_ssid": "2.4 GHz network. WPA3-only and 5 GHz-only networks will not join.",
           "wifi_password": "Stored on this config entry. It is not written to logs or diagnostics.",
-          "fleet_password": "Optional. One admin password applied to each adopted device with Shelly.SetAuth. Leave blank to leave authentication off.",
+          "fleet_password": "Password for the Shelly local web page and API. Username is always admin. Shelly Bulk saves it into the Shelly integration so Home Assistant stays connected. Leave blank for no login.",
           "timezone": "Optional. An IANA tz database name, case-sensitive, Region/City, for example Australia/Melbourne, Australia/Sydney, or Europe/London. Abbreviations such as AEDT and offsets such as UTC+11 are not accepted. This sets the device clock zone for on-device schedules and sunrise/sunset. It matters more when Shelly Cloud is off, because the device will not auto-detect a zone. Leave it blank and no location.tz is sent."
         }
       },
@@ -68,7 +68,7 @@
       },
       "wifi": {
         "title": "Wi-Fi",
-        "description": "Leave the password blank to keep the one already stored on this entry.",
+        "description": "Leave the Wi-Fi password blank to keep the one already stored on this entry.",
         "data": {
           "wifi_ssid": "Wi-Fi SSID",
           "wifi_password": "Wi-Fi password"
@@ -76,22 +76,25 @@
       },
       "security": {
         "title": "Security and timezone",
-        "description": "Leave the password blank to keep the stored device password. Leave the timezone blank to keep the stored zone. Tick Clear timezone to store no zone, so location.tz is not sent. A new Region/City name replaces the stored zone.",
+        "description": "A new device login password is stored for later. Changing it here does not re-key any device. Leave the box blank to keep the stored password. Devices that already have a login are never changed, and Home Assistant keeps the password already stored for them. Leave the timezone blank to keep the stored zone. Tick Clear timezone to store no zone, so location.tz is not sent. A new Region/City name replaces the stored zone.",
         "data": {
-          "fleet_password": "Device password",
+          "fleet_password": "Device login password (admin)",
           "timezone": "Timezone",
           "clear_timezone": "Clear timezone",
           "disable_cloud": "Disable Shelly Cloud",
           "disable_ap": "Disable the device access point",
           "disable_ble_rpc": "Disable Bluetooth RPC"
+        },
+        "data_description": {
+          "fleet_password": "Local web page and API password. Username is always admin. Stored only. Keep a copy in your password manager. A lost password needs a factory reset."
         }
       },
       "secure": {
         "title": "Secure profile",
-        "description": "Hardening applied by the Secure devices action. The password box updates the stored device password when you type one; leave it blank to keep the stored password. It is not written to logs or diagnostics.",
+        "description": "Checklist for Secure devices. Typing a password here only stores it. It does not re-key devices. Secure devices and Apply profile set this login only on devices that have no password. Devices that already have a password are left unchanged, and Home Assistant keeps the password already stored for them.",
         "data": {
-          "fleet_password": "Device password",
-          "secure_rotate_password": "Set or rotate the device password",
+          "fleet_password": "Device login password (admin)",
+          "secure_rotate_password": "Set the device login when a device has none",
           "secure_disable_cloud": "Disable Shelly Cloud",
           "secure_disable_ap": "Disable the Wi-Fi access point",
           "secure_disable_ble_rpc": "Disable Bluetooth RPC",
@@ -102,9 +105,11 @@
           "secure_restrict_web_ui": "Restrict web UI discovery"
         },
         "data_description": {
+          "fleet_password": "Stored for devices that have no login. Does not replace a password a device already has.",
+          "secure_rotate_password": "Shelly.SetAuth with username admin, only when the device has no login.",
           "secure_disable_ble_rpc": "Bluetooth itself stays on so an enabled scanner proxy keeps working.",
           "secure_firmware_manual": "Gen2+ has no auto-update switch. This skips Shelly.Update. Cloud push stops when cloud is off.",
-          "secure_restrict_web_ui": "Turns off mDNS discovery. The web UI still requires the device password when authentication is on."
+          "secure_restrict_web_ui": "Turns off mDNS discovery. The web page still asks for the device login when a password is set."
         }
       },
       "inputs": {
@@ -199,7 +204,10 @@
         "name": "Last error"
       },
       "security_audit": {
-        "name": "Security audit"
+        "name": "Security audit",
+        "state": {
+          "not_audited": "Not audited"
+        }
       }
     },
     "select": {
@@ -238,7 +246,7 @@
   "services": {
     "apply_profile": {
       "name": "Apply profile",
-      "description": "Apply the Shelly Bulk security and channel profile to Shelly devices already added by the core Shelly integration. Devices that already have authentication are updated only with the password stored on their Shelly entry. Their password is not replaced.",
+      "description": "Apply the Shelly Bulk security and channel profile to Shelly devices already added by the core Shelly integration. Sets the device login only when a device has no password. Devices that already have a password are not changed, and Home Assistant keeps the password already stored for them.",
       "fields": {
         "device_id": {
           "name": "Devices",
@@ -404,14 +412,14 @@
     },
     "secure_devices": {
       "name": "Secure devices",
-      "description": "Apply the secure profile and read each checklist item back. Uses the device password stored in the options. The password is not logged.",
+      "description": "Apply the secure profile and read each checklist item back. Sets the stored device login only on devices that have no password. Does not replace an existing password. The password is not logged.",
       "fields": {
         "device_id": {"name": "Devices", "description": "Core Shelly devices to secure."},
         "area_id": {"name": "Areas", "description": "Secure every core Shelly device in these areas."},
         "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
         "mac": {"name": "MAC address", "description": "Optional device MAC."},
         "all_shelly": {"name": "All Shelly devices", "description": "Secure every core Shelly config entry."},
-        "rotate_password": {"name": "Set or rotate password", "description": "Shelly.SetAuth with the stored device password."},
+        "rotate_password": {"name": "Set login when missing", "description": "Shelly.SetAuth with username admin, only when the device has no login. Does not replace an existing password."},
         "disable_cloud": {"name": "Disable cloud", "description": "Turn off the Shelly Cloud connection."},
         "disable_ap": {"name": "Disable access point", "description": "Turn off the device Wi-Fi access point."},
         "disable_ble_rpc": {"name": "Disable Bluetooth RPC", "description": "Keep Bluetooth enabled for the scanner."},

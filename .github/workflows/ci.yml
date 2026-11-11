@@ -37,5 +37,7 @@ jobs:
           python-version: "3.13"
       - name: Install test dependencies
         run: pip install -r requirements_test.txt
+      - name: English translations match strings.json
+        run: diff -q custom_components/shelly_bulk/strings.json custom_components/shelly_bulk/translations/en.json
       - name: Run tests
         run: pytest

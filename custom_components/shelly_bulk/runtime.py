@@ -660,7 +660,8 @@ class FleetRuntime:
         password = str(self.entry.data.get(CONF_FLEET_PASSWORD) or "")
         if profile.rotate_password and not password:
             raise ServiceValidationError(
-                "Set the device password in the Shelly Bulk options before securing devices"
+                "Set the device login password (admin) under Configure. "
+                "Saving it there stores it for devices that have no login. It does not change devices by itself."
             )
         entries = self._select_shelly_entries(
             device_ids=selectors.get("device_ids") or set(),

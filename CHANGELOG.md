@@ -3,6 +3,7 @@
 ## 0.2.1
 
 - Timezone is optional. The config flow pre-fills Home Assistant's own zone (`Settings > System > General`) as a suggestion, read at runtime rather than shipped. Clear the field and no `location.tz` is sent. A filled value must be an IANA `Region/City` name, for example Australia/Melbourne. In options, leave the box blank to keep the stored zone, or tick Clear timezone to remove it.
+- Device login password is labelled as the `admin` password for the local web page and API. A blank value leaves devices open. Saving a new password in Configure only stores it. Secure devices and Apply profile set it only on devices that have no login. A device that already has a password is not changed, and Home Assistant keeps the password already stored for that Shelly.
 
 ## 0.2.0
 

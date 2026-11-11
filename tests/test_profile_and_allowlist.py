@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -23,6 +24,16 @@ from custom_components.shelly_bulk.redact import SecretFilter, redact
 from custom_components.shelly_bulk.util import normalize_mac
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_english_translations_match_strings() -> None:
+    package = ROOT / "custom_components" / "shelly_bulk"
+    strings = json.loads((package / "strings.json").read_text(encoding="utf-8"))
+    english = json.loads((package / "translations" / "en.json").read_text(encoding="utf-8"))
+    assert english == strings
+    menu = strings["options"]["step"]["init"]["menu_options"]
+    for option, label in menu.items():
+        assert str(label).strip(), option
 
 
 def test_manifest_version_matches_constant() -> None:

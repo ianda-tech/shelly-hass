@@ -152,6 +152,55 @@ async def test_secure_devices_rotates_password_and_reconnects(hass, monkeypatch)
     assert hass.states.get(audit_id).state == "1/1"
 
 
+async def test_secure_devices_leaves_an_existing_password_unchanged(hass, monkeypatch) -> None:
+    stored = "already-on-the-shelly"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="example-site",
+        title="Example site",
+        data={
+            CONF_SITE_NAME: "Example site",
+            "wifi_ssid": "example-ssid",
+            "wifi_password": "example-wifi-pass",
+            CONF_FLEET_PASSWORD: PASSWORD,
+            "timezone": "UTC",
+        },
+        options={},
+    )
+    entry.add_to_hass(hass)
+    shelly = MockConfigEntry(
+        domain="shelly",
+        unique_id="00000000000A",
+        title="Example Shelly",
+        data={CONF_HOST: "192.0.2.10", CONF_PORT: 80, CONF_USERNAME: "admin", CONF_PASSWORD: stored},
+    )
+    shelly.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    fake = FakeSession()
+    fake._shelly["auth_en"] = True
+
+    async def _open(_hass, host, port, username, password, verify_ssl):
+        return fake
+
+    monkeypatch.setattr("custom_components.shelly_bulk.runtime.async_open_rpc", _open)
+    result = await hass.services.async_call(
+        DOMAIN,
+        "secure_devices",
+        {"mac": "00000000000A"},
+        blocking=True,
+        return_response=True,
+    )
+    report = result["results"][0]
+    assert report["auth_on"] is True
+    assert not any(method == "Shelly.SetAuth" for method, _params in fake.calls)
+    assert shelly.data[CONF_PASSWORD] == stored
+    assert shelly.data[CONF_USERNAME] == "admin"
+    assert any("already has a login" in note for note in report["notes"])
+    assert stored not in str(result)
+    assert PASSWORD not in str(result)
+
+
 async def test_advanced_service_reads_back_and_skips_missing_led(hass, monkeypatch) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
