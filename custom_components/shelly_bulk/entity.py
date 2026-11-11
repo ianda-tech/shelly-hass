@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
 from .const import DOMAIN, MANUFACTURER, VERSION
 from .runtime import FleetRuntime
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class FleetEntity(Entity):
@@ -41,13 +45,19 @@ def companion_identifier(entry) -> tuple[str, str]:
     return (DOMAIN, f"companion_{entry.entry_id}")
 
 
-def linked_shelly_names(hass, entry) -> tuple[str, str, str, str, str]:
-    """Return user name, device name, model, MAC, and IP for a core Shelly entry."""
+def core_shelly_device(hass, entry):
+    """Return the core Shelly device for one Shelly config entry, if it exists."""
     registry = dr.async_get(hass)
     devices = dr.async_entries_for_config_entry(registry, entry.entry_id)
     device = next((item for item in devices if item.via_device_id is None), None)
     if device is None and devices:
         device = devices[0]
+    return device
+
+
+def linked_shelly_names(hass, entry) -> tuple[str, str, str, str, str]:
+    """Return user name, device name, model, MAC, and IP for a core Shelly entry."""
+    device = core_shelly_device(hass, entry)
     name_by_user = ""
     device_name = entry.title or ""
     if device is not None:
@@ -59,10 +69,22 @@ def linked_shelly_names(hass, entry) -> tuple[str, str, str, str, str]:
     return name_by_user, device_name, model, mac, ip
 
 
+def safe_device_update(registry, device_id: str, **kwargs) -> None:
+    """Update a device. A registry error is logged and does not stop setup."""
+    if not kwargs:
+        return
+    try:
+        registry.async_update_device(device_id, **kwargs)
+    except Exception:
+        _LOGGER.exception("Could not update device %s", device_id)
+
+
 def shelly_device_info(hass, entry) -> DeviceInfo:
     """Describe the Shelly Bulk device for one core Shelly.
 
     The name is the linked Shelly's name plus its MAC and IP, not the hub title.
+    The MAC connection stays on the core Shelly device. This device only links
+    to it with via_device.
     """
     from .groups import companion_device_name, friendly_model
 
@@ -75,18 +97,18 @@ def shelly_device_info(hass, entry) -> DeviceInfo:
     )
     if ip:
         info["configuration_url"] = f"http://{ip}"
-    if mac:
-        try:
-            from .util import display_mac
-
-            info["connections"] = {(dr.CONNECTION_NETWORK_MAC, display_mac(mac))}
-        except ValueError:
-            pass
+    core = core_shelly_device(hass, entry)
+    if core is not None and core.identifiers:
+        info["via_device"] = next(iter(core.identifiers))
     return info
 
 
 def update_companion_device(hass, entry, *, ip: str | None = None) -> None:
-    """Refresh the companion name when the IP changes, unless the user renamed it."""
+    """Refresh the companion name when the IP changes, unless the user renamed it.
+
+    Any MAC connection left on this device by 0.2.6 is removed. The core Shelly
+    device keeps that connection.
+    """
     from .groups import companion_device_name
 
     registry = dr.async_get(hass)
@@ -95,17 +117,19 @@ def update_companion_device(hass, entry, *, ip: str | None = None) -> None:
         return
     name_by_user, device_name, model, mac, stored_ip = linked_shelly_names(hass, entry)
     current_ip = ip if ip is not None else stored_ip
-    kwargs = {}
+    kwargs: dict = {}
+    mac_connections = {
+        connection
+        for connection in device.connections
+        if connection[0] == dr.CONNECTION_NETWORK_MAC
+    }
+    if mac_connections:
+        kwargs["new_connections"] = set(device.connections) - mac_connections
     if not device.name_by_user:
         kwargs["name"] = companion_device_name(name_by_user, device_name, model, mac, current_ip)
     if current_ip:
         kwargs["configuration_url"] = f"http://{current_ip}"
-    if mac:
-        try:
-            from .util import display_mac
-
-            kwargs["merge_connections"] = {(dr.CONNECTION_NETWORK_MAC, display_mac(mac))}
-        except ValueError:
-            pass
-    if kwargs:
-        registry.async_update_device(device.id, **kwargs)
+    core = core_shelly_device(hass, entry)
+    if core is not None and device.via_device_id != core.id:
+        kwargs["via_device_id"] = core.id
+    safe_device_update(registry, device.id, **kwargs)

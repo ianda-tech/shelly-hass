@@ -71,6 +71,26 @@ def test_companion_name_uses_the_shelly_not_the_hub() -> None:
     assert "Cheviot" not in unnamed
 
 
+async def test_device_registry_errors_do_not_propagate(hass) -> None:
+    from custom_components.shelly_bulk.entity import safe_device_update
+
+    entry = _entry()
+    entry.add_to_hass(hass)
+    registry = dr.async_get(hass)
+    device = registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={("shelly_bulk", "companion_test")},
+        name="Test",
+    )
+
+    def _boom(*_args, **_kwargs):
+        raise dr.DeviceConnectionCollisionError({("mac", "aa:bb:cc:dd:ee:ff")}, device)
+
+    registry.async_update_device = _boom
+    safe_device_update(registry, device.id, name="Changed")
+    assert registry.async_get(device.id).name == "Test"
+
+
 def test_only_ticked_fields_are_sent() -> None:
     updates = ticked_updates(
         {"change_input_mode": True, "input_mode": "detached", "change_auto_off": False, "auto_off": True},
@@ -79,12 +99,15 @@ def test_only_ticked_fields_are_sent() -> None:
     assert updates == {"input_mode": "detached"}
 
 
-async def test_upgrade_reenables_only_integration_disabled_entities(hass) -> None:
+async def test_reenable_runs_once_during_migration(hass, monkeypatch) -> None:
+    from homeassistant.config_entries import ConfigEntryState
     from homeassistant.helpers import entity_registry as er
     from homeassistant.helpers.entity_registry import RegistryEntryDisabler
 
-    from custom_components.shelly_bulk import _reenable_integration_disabled
+    async def _offline(*_args, **_kwargs):
+        raise OSError("offline")
 
+    monkeypatch.setattr("custom_components.shelly_bulk.runtime.FleetRuntime._connect_with_retries", _offline)
     entry = _entry()
     entry.add_to_hass(hass)
     registry = er.async_get(hass)
@@ -102,8 +125,24 @@ async def test_upgrade_reenables_only_integration_disabled_entities(hass) -> Non
         config_entry=entry,
         disabled_by=RegistryEntryDisabler.USER,
     )
-    _reenable_integration_disabled(hass, entry)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.minor_version == 2
+    assert entry.state is ConfigEntryState.LOADED
     assert registry.async_get(integration.entity_id).disabled_by is None
+    assert registry.async_get(user.entity_id).disabled_by is RegistryEntryDisabler.USER
+
+    later = registry.async_get_or_create(
+        "switch",
+        DOMAIN,
+        "integration_off_later",
+        config_entry=entry,
+        disabled_by=RegistryEntryDisabler.INTEGRATION,
+    )
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    assert registry.async_get(later.entity_id).disabled_by is RegistryEntryDisabler.INTEGRATION
     assert registry.async_get(user.entity_id).disabled_by is RegistryEntryDisabler.USER
 
 
@@ -125,10 +164,14 @@ async def test_mac_sensor_and_visit_link(hass, monkeypatch) -> None:
     device = registry.async_get_or_create(
         config_entry_id=shelly.entry_id,
         identifiers={("shelly", "48F6EEBA6EFC")},
+        connections={(dr.CONNECTION_NETWORK_MAC, "48:f6:ee:ba:6e:fc")},
         name="shelly1pmminig3-48f6eeba6efc",
     )
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    from homeassistant.config_entries import ConfigEntryState
+
+    assert entry.state is ConfigEntryState.LOADED
     mac_states = [item for item in hass.states.async_all("sensor") if item.entity_id.endswith("mac_address")]
     assert mac_states
     assert "1pm_mini_gen3" in mac_states[0].entity_id
@@ -137,7 +180,9 @@ async def test_mac_sensor_and_visit_link(hass, monkeypatch) -> None:
     companion = registry.async_get_device(identifiers={("shelly_bulk", f"companion_{shelly.entry_id}")})
     assert companion is not None
     assert companion.name == "1PM Mini Gen3 · 6EFC · 192.0.2.10"
-    assert (dr.CONNECTION_NETWORK_MAC, "48:f6:ee:ba:6e:fc") in companion.connections
+    assert companion.connections == set()
+    assert companion.via_device_id == device.id
+    assert (dr.CONNECTION_NETWORK_MAC, "48:f6:ee:ba:6e:fc") in registry.async_get(device.id).connections
     assert companion.configuration_url == "http://192.0.2.10"
     registry.async_update_device(companion.id, name_by_user="My porch")
     runtime = hass.data[DOMAIN][entry.entry_id]

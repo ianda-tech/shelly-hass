@@ -615,7 +615,13 @@ class FleetRuntime:
         self._store.async_delay_save(self._store_data, 0.1)
 
     def publish_shelly_link(self, entry: ConfigEntry, ip: str) -> None:
-        """Put the MAC on the device and point Visit at http://<ip>."""
+        """Put the MAC on the core Shelly device and point Visit at http://<ip>.
+
+        The companion device does not get this connection. A registry error is logged.
+        """
+        from .entity import safe_device_update, update_companion_device
+
+        update_companion_device(self.hass, entry, ip=ip)
         dev_reg = dr.async_get(self.hass)
         devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
         device = next((item for item in devices if item.via_device_id is None), None)
@@ -634,14 +640,7 @@ class FleetRuntime:
             kwargs["merge_connections"] = {(dr.CONNECTION_NETWORK_MAC, mac)}
         if ip:
             kwargs["configuration_url"] = f"http://{ip}"
-        if not kwargs:
-            return
-        try:
-            dev_reg.async_update_device(device.id, **kwargs)
-        except dr.DeviceConnectionCollisionError:
-            kwargs.pop("merge_connections", None)
-            if kwargs:
-                dev_reg.async_update_device(device.id, **kwargs)
+        safe_device_update(dev_reg, device.id, **kwargs)
 
     async def refresh_network(self, entry: ConfigEntry) -> dict[str, Any]:
         """Read the live Wi-Fi address. Falls back to the host stored by core Shelly."""
@@ -663,9 +662,6 @@ class FleetRuntime:
             pass
         self._network[entry.entry_id] = {"ip": ip, "ssid": ssid, "rssi": rssi}
         self.publish_shelly_link(entry, ip)
-        from .entity import update_companion_device
-
-        update_companion_device(self.hass, entry, ip=ip)
         self.notify()
         return self._network[entry.entry_id]
 
@@ -1195,7 +1191,9 @@ class FleetRuntime:
             if area is None:
                 area = area_reg.async_create(room)
             kwargs["area_id"] = area.id
-        dev_reg.async_update_device(primary.id, **kwargs)
+        from .entity import safe_device_update
+
+        safe_device_update(dev_reg, primary.id, **kwargs)
         return f"Home Assistant name/area updated ({room})" if room or name else ""
 
     async def secure_devices(self, **selectors: Any) -> list[dict[str, Any]]:
