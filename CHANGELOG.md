@@ -6,6 +6,8 @@
 - **Retry failed** clears the failed list and tries those devices again the next time they advertise. The same action is `shelly_bulk.retry_failed`. A failed result mentions a power-cycle only when that device is advertising without Bluetooth RPC.
 - Upgrade removes the extra devices left behind when companion devices were introduced. Before 0.2.6 those devices used `("shelly", <Shelly unique id or entry id>)` and had no name of their own, so Home Assistant showed the site name. The device that remains is `("shelly_bulk", "companion_<Shelly entry id>")`. Entities keep their entity id, a name you set, and a disabled state you set. A core Shelly device is not removed. A leftover device can also be deleted from the device page.
 - The integration is shown as Shelly Installer. The domain stays `shelly_bulk`, and existing entity ids are unchanged.
+- Each switch channel has a consumption type select (switch, light, fan, socket, and the other values Shelly stores). It is written only when the value differs, and it does not reboot the device. Home Assistant shows the channel as a light when the type is light.
+- Configure → Device type can set that consumption type for a group, and can change the device profile (switch or cover, or whatever Shelly.ListProfiles returns) only after you tick the reboot box. Profiles run one device at a time. The device reboots itself. The core Shelly entry is reloaded afterwards. No other action reboots a device.
 
 ## 0.2.8
 

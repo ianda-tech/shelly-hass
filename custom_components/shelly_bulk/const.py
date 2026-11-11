@@ -86,6 +86,7 @@ OPTIONS_MENU: Final = (
     "add_device",
     "edit_device",
     "bulk_change",
+    "device_type",
 )
 
 POLL_INTERVAL_SECONDS: Final = 3.0

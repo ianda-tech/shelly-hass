@@ -27,10 +27,12 @@ from homeassistant.helpers.selector import (
 )
 
 from .device_settings import CHANNEL_KEYS, channel_updates
+from .device_type import CONSUMPTION_LABELS, CONSUMPTION_TYPES
 from .groups import confirmation_text, fields_for, model_options, room_options, select_cards, ticked_updates
 from .pairing import valid_initial_states
 from .security import SECURE_OPTION_DEFAULTS
 from .const import (
+    UNCHANGED,
     BLE_SCANNER_MODES,
     CONF_APPLY_DIMMER_PROFILE,
     CONF_APPLY_INPUT_PROFILE,
@@ -642,6 +644,56 @@ class ShellyBulkOptionsFlow(OptionsFlow):
         self._bulk_updates = dict(getattr(self, "_saved_channel", {}) or {})
         return await self._group_step("copy_settings", user_input, include_none=True)
 
+    async def async_step_device_type(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Choose devices, then a consumption type and an optional profile."""
+        self._bulk_purpose = "device_type"
+        return await self._group_step("device_type", user_input, include_none=False)
+
+    async def async_step_device_type_form(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        runtime = self._fleet()
+        if runtime is None:
+            return self.async_abort(reason="not_loaded")
+        if not hasattr(self, "_device_type_profiles"):
+            summary = await runtime.describe_device_types([card.entry_id for card in self._bulk_chosen])
+            self._device_type_profiles = list(summary.get("profiles") or [])
+        profiles = self._device_type_profiles
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            consumption = str(user_input.get("consumption_type") or UNCHANGED)
+            profile = str(user_input.get("profile") or UNCHANGED)
+            confirm = bool(user_input.get("confirm_profile_reboot"))
+            if profile != UNCHANGED and not confirm:
+                errors["confirm_profile_reboot"] = "confirm_profile"
+            elif consumption == UNCHANGED and profile == UNCHANGED:
+                return self.async_abort(reason="nothing_selected")
+            else:
+                runtime.start_device_type(
+                    [card.entry_id for card in self._bulk_chosen],
+                    consumption=None if consumption == UNCHANGED else consumption,
+                    profile=None if profile == UNCHANGED else profile,
+                    confirm_reboot=confirm,
+                )
+                return self.async_abort(
+                    reason="device_type_started",
+                    description_placeholders={"count": str(len(self._bulk_chosen))},
+                )
+        consumption_options = [(UNCHANGED, "Leave unchanged")]
+        consumption_options.extend((name, CONSUMPTION_LABELS.get(name, name)) for name in CONSUMPTION_TYPES)
+        profile_options = [(UNCHANGED, "Leave unchanged")]
+        profile_options.extend((name, name) for name in profiles)
+        return self.async_show_form(
+            step_id="device_type_form",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("consumption_type", default=UNCHANGED): _choice(consumption_options),
+                    vol.Required("profile", default=UNCHANGED): _choice(profile_options),
+                    vol.Required("confirm_profile_reboot", default=False): BooleanSelector(),
+                }
+            ),
+            errors=errors,
+            description_placeholders={"count": str(len(self._bulk_chosen))},
+        )
+
     async def async_step_bulk_change(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Start a bulk change. The device work happens after the form closes."""
         self._bulk_purpose = "bulk"
@@ -727,6 +779,8 @@ class ShellyBulkOptionsFlow(OptionsFlow):
         self._bulk_chosen = chosen
         if not chosen:
             return self.async_abort(reason="no_devices")
+        if self._bulk_purpose == "device_type":
+            return await self.async_step_device_type_form()
         return await self.async_step_bulk_confirm()
 
     async def async_step_bulk_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

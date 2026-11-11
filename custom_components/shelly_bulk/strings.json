@@ -68,7 +68,8 @@
           "allowlist": "Import allowlist",
           "add_device": "Add device",
           "edit_device": "Edit a device",
-          "bulk_change": "Bulk change settings"
+          "bulk_change": "Bulk change settings",
+          "device_type": "Device type"
         }
       },
       "wifi": {
@@ -243,6 +244,27 @@
           "group": "Devices"
         }
       },
+      "device_type": {
+        "title": "Device type",
+        "description": "Choose the devices. The next step sets the consumption type, and the profile only when you confirm the reboot.",
+        "data": {
+          "group": "Devices"
+        }
+      },
+      "device_type_form": {
+        "title": "Device type",
+        "description": "Consumption type is saved on each switch channel and is not a reboot. Home Assistant shows a channel as a light when the type is light, and as a switch otherwise. A profile is sent only to devices that list it, and only when you tick the box. The device reboots itself after a profile change. Nothing else in Shelly Installer reboots a device. This will update {count} devices, one at a time.",
+        "data": {
+          "consumption_type": "Consumption type",
+          "profile": "Device profile",
+          "confirm_profile_reboot": "Reboot these devices to apply the profile"
+        },
+        "data_description": {
+          "consumption_type": "Applied to every switch channel. Leave unchanged to skip.",
+          "profile": "Shown from Shelly.ListProfiles. Leave unchanged to skip. Switch and cover are typical on a 2PM.",
+          "confirm_profile_reboot": "Required to change profile. The device reboots itself. Webhooks and schedules on that device are deleted by Shelly."
+        }
+      },
       "bulk_filter": {
         "title": "Which devices",
         "data": {
@@ -304,7 +326,8 @@
       "invalid_mac": "Enter a 12-digit MAC address.",
       "already_listed": "That MAC is already on the device list. Edit the CSV to change its name or room.",
       "not_applied": "The device did not keep this value. It was left as it is.",
-      "not_reachable": "Shelly Installer could not open this device. Check that it is online."
+      "not_reachable": "Shelly Installer could not open this device. Check that it is online.",
+      "confirm_profile": "Tick the box to change profile. The device reboots itself. No other change reboots it."
     },
     "abort": {
       "allowlist_imported": "Imported {count} devices into this Home Assistant instance.",
@@ -312,7 +335,8 @@
       "no_devices": "No Shelly devices have been added yet.",
       "bulk_started": "Applying settings to {count} devices. Progress and results are in a notification, and in the report.",
       "device_saved": "Saved this device. No other devices were changed.",
-      "nothing_selected": "No settings were ticked, so nothing was sent."
+      "nothing_selected": "No settings were ticked, so nothing was sent.",
+      "device_type_started": "Updating device type on {count} devices, one at a time. A profile change reboots that device, then its Shelly entry is reloaded."
     }
   },
   "entity": {
@@ -348,6 +372,19 @@
           "auto": "Auto",
           "passive": "Passive",
           "disabled": "Disabled"
+        }
+      },
+      "consumption_type": {
+        "name": "Consumption type {channel}",
+        "state": {
+          "switch": "Switch",
+          "light": "Light",
+          "fan": "Fan",
+          "socket": "Socket",
+          "outlet": "Outlet",
+          "heating": "Heating",
+          "refrigeration": "Refrigeration",
+          "other": "Other"
         }
       },
       "input_mode": {

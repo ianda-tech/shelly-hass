@@ -23,7 +23,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.issue_registry import (
     IssueSeverity,
     async_create_issue,
@@ -111,6 +111,8 @@ class FleetRuntime:
         self._list_mtime: float | None = None
         self._list_unsub = None
         self._network: dict[str, dict[str, Any]] = {}
+        self._consumption_cache: dict[str, dict[str, Any]] = {}
+        self._consumption_added: set[tuple[str, int]] = set()
         # Entity setup used to open one RPC session per control at the same time.
         # A Shelly reboots when that many sessions arrive together.
         self._rpc_limit = asyncio.Semaphore(3)
@@ -730,6 +732,135 @@ class FleetRuntime:
         self.publish_shelly_link(entry, ip)
         self.notify()
         return self._network[entry.entry_id]
+
+    async def read_switch_consumption(self, entry: ConfigEntry) -> dict[str, Any]:
+        """Read switch channels and consumption types. One session is reused."""
+        from .device_type import channel_consumption, switch_channels
+
+        cached = self._consumption_cache.get(entry.entry_id)
+        if cached is not None:
+            return cached
+        session = await self._open_shelly(entry, attempts=1)
+        try:
+            channels = switch_channels(dict(getattr(session, "config", {}) or {}))
+            sys_cfg = await session.call("Sys.GetConfig")
+            ui = sys_cfg.get("ui_data") if isinstance(sys_cfg, dict) else None
+            raw = ui.get("consumption_types") if isinstance(ui, dict) else None
+            types = list(raw) if isinstance(raw, list) else []
+        finally:
+            await session.shutdown()
+        cached = {
+            "channels": channels,
+            "types": types,
+            "values": {channel: channel_consumption(types, channel) for channel in channels},
+        }
+        self._consumption_cache[entry.entry_id] = cached
+        return cached
+
+    async def write_consumption_type(self, entry: ConfigEntry, channel: int, value: str) -> str | None:
+        from .device_type import write_consumption
+
+        session = await self._open_shelly(entry, attempts=1)
+        try:
+            written = await write_consumption(session, channel, value)
+        finally:
+            await session.shutdown()
+        self._consumption_cache.pop(entry.entry_id, None)
+        return written
+
+    async def describe_device_types(self, entry_ids: list[str]) -> dict[str, Any]:
+        """Profiles the chosen devices actually list. Failures are skipped."""
+        from .device_type import profile_names
+
+        found: set[str] = set()
+        for entry_id in entry_ids:
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is None:
+                continue
+            try:
+                session = await self._open_shelly(entry, attempts=1)
+                try:
+                    listed = await session.call("Shelly.ListProfiles")
+                finally:
+                    await session.shutdown()
+            except Exception:  # noqa: BLE001
+                continue
+            found.update(profile_names(listed))
+        return {"profiles": sorted(found)}
+
+    def start_device_type(
+        self,
+        entry_ids: list[str],
+        *,
+        consumption: str | None,
+        profile: str | None,
+        confirm_reboot: bool,
+    ) -> int:
+        """Apply consumption type, then a confirmed profile, one device at a time."""
+        ids = list(dict.fromkeys(entry_ids))
+        self.hass.async_create_background_task(
+            self._apply_device_types(ids, consumption, profile if confirm_reboot else None),
+            name="shelly_bulk_device_type",
+        )
+        self._notify(
+            "Shelly Installer",
+            f"Updating device type on {len(ids)} devices.",
+            "shelly_bulk_device_type",
+        )
+        return len(ids)
+
+    async def _pause(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+
+    def _reload_shelly_later(self, entry: ConfigEntry) -> None:
+        """Reload the core Shelly entry after the device has rebooted itself."""
+
+        def _reload(_now: object) -> None:
+            if self.hass.config_entries.async_get_entry(entry.entry_id) is None:
+                return
+            self.hass.config_entries.async_schedule_reload(entry.entry_id)
+
+        async_call_later(self.hass, 15, _reload)
+
+    async def _apply_device_types(
+        self,
+        entry_ids: list[str],
+        consumption: str | None,
+        profile: str | None,
+    ) -> None:
+        from .device_type import switch_channels, write_consumption, write_profile
+
+        changed_profile = False
+        for index, entry_id in enumerate(entry_ids):
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is None:
+                continue
+            session = None
+            try:
+                session = await self._open_shelly(entry, attempts=1)
+                if consumption:
+                    for channel in switch_channels(dict(getattr(session, "config", {}) or {})):
+                        await write_consumption(session, channel, consumption)
+                    self._consumption_cache.pop(entry.entry_id, None)
+                if profile and await write_profile(session, profile):
+                    changed_profile = True
+                    self._reload_shelly_later(entry)
+            except Exception as err:  # noqa: BLE001
+                self.record(str(entry.unique_id or entry_id), "failed", self.redact(str(err)), count=False)
+            finally:
+                if session is not None:
+                    try:
+                        await session.shutdown()
+                    except Exception:  # noqa: BLE001
+                        pass
+            if index + 1 < len(entry_ids):
+                await self._pause(8 if changed_profile else 1)
+            changed_profile = False
+        self._notify(
+            "Shelly Installer",
+            "Finished updating device type.",
+            "shelly_bulk_device_type",
+        )
 
     def start_bulk_apply(self, entry_ids: list[str], updates: dict[str, Any]) -> int:
         """Apply settings in the background. The caller does not wait for the devices."""
