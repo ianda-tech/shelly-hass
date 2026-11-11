@@ -3,30 +3,31 @@
     "step": {
       "user": {
         "title": "Site",
-        "description": "Enter the values for this Home Assistant instance. Nothing is pre-filled from the integration. This instance's timezone is {ha_timezone}; type the IANA name you want on the devices.",
+        "description": "Wi-Fi and the device login password are entered here and are not shipped with the integration. The login username is always admin. Leave the password blank and new devices stay open, with no login. It is applied when a new or factory device is adopted. Store it in a password manager: a lost password needs a factory reset. Timezone is optional and is pre-filled from this Home Assistant instance ({ha_timezone}). Clear it to send no zone.",
         "data": {
           "site_name": "Site name",
           "wifi_ssid": "Wi-Fi SSID",
           "wifi_password": "Wi-Fi password",
-          "fleet_password": "Device password",
+          "fleet_password": "Device login password (admin)",
           "timezone": "Timezone"
         },
         "data_description": {
           "site_name": "A label for this Shelly Bulk entry, shown in Home Assistant.",
           "wifi_ssid": "2.4 GHz network. WPA3-only and 5 GHz-only networks will not join.",
           "wifi_password": "Stored on this config entry. It is not written to logs or diagnostics.",
-          "fleet_password": "Optional. One admin password applied to each adopted device with Shelly.SetAuth. Leave blank to leave authentication off.",
-          "timezone": "IANA name such as the zone configured on Home Assistant. Required; there is no built-in zone."
+          "fleet_password": "Password for the Shelly local web page and API. Username is always admin. Shelly Bulk saves it into the Shelly integration so Home Assistant stays connected. Leave blank for no login.",
+          "timezone": "Optional. An IANA tz database name, case-sensitive, Region/City, for example Australia/Melbourne, Australia/Sydney, or Europe/London. Abbreviations such as AEDT and offsets such as UTC+11 are not accepted. This sets the device clock zone for on-device schedules and sunrise/sunset. It matters more when Shelly Cloud is off, because the device will not auto-detect a zone. Leave it blank and no location.tz is sent."
         }
       },
       "behaviour": {
         "title": "Provisioning behaviour",
-        "description": "These are generic choices, not a site profile. Home Assistant's Shelly flow always turns the access point and Bluetooth RPC off after Wi-Fi provisioning. Uncheck those boxes to turn them back on afterwards. The Bluetooth scanner is separate and stays available for the proxy.",
+        "description": "These are generic choices, not a site profile. Home Assistant's Shelly flow always turns the access point and Bluetooth RPC off after Wi-Fi provisioning. Uncheck those boxes to turn them back on afterwards. The Bluetooth scanner is separate and stays available for the proxy. Auto-adopt nearby new Shellies is on by default. It does nothing while Only provision devices in the allowlist is on. Turn that option off to adopt every factory-new Shelly in range, including a neighbour's.",
         "data": {
           "disable_cloud": "Disable Shelly Cloud",
           "disable_ap": "Disable the device access point",
           "disable_ble_rpc": "Disable Bluetooth RPC",
           "update_firmware": "Update to stable firmware after adoption",
+          "auto_adopt": "Auto-adopt nearby new Shellies",
           "require_allowlist": "Only provision devices in the allowlist",
           "ble_scanner_mode": "Bluetooth scanner mode on each adopted Shelly",
           "concurrency": "Devices to provision at once",
@@ -35,7 +36,8 @@
         },
         "data_description": {
           "disable_ble_rpc": "Bluetooth RPC is the setup channel. The advertisement proxy keeps working with RPC off.",
-          "require_allowlist": "Leave this on unless you intend to adopt every factory-new Shelly that any proxy can hear.",
+          "auto_adopt": "On, and with Only provision the allowlist off, a factory-new Shelly with no login and an open setup window is adopted even if it is not on the list.",
+          "require_allowlist": "While this is on, auto-adopt leaves devices that are not on the list alone. Turn it off only to adopt every factory-new Shelly in range, including a neighbour's.",
           "ble_scanner_mode": "Active asks nearby devices for full advertisements. Shelly proxies cannot open GATT connections.",
           "concurrency": "Keep this within the free connection slots of your connectable Bluetooth proxies. 2 is a safe start.",
           "provisioning_minutes": "How long the provisioning switch stays on. This is not the device's 15-minute setup window."
@@ -43,7 +45,7 @@
       }
     },
     "error": {
-      "invalid_timezone": "Enter a valid IANA timezone name."
+      "invalid_timezone": "Enter an IANA timezone name such as Australia/Melbourne, Australia/Sydney, or Europe/London. Abbreviations such as AEDT and offsets such as UTC+11 are not accepted."
     },
     "abort": {
       "already_configured": "This site name is already configured.",
@@ -58,16 +60,19 @@
         "menu_options": {
           "wifi": "Wi-Fi",
           "security": "Security and timezone",
+          "secure": "Secure profile",
           "inputs": "Input profile",
           "outputs": "Output profile",
           "dimmers": "Dimmer profile",
           "provisioning": "Provisioning",
-          "allowlist": "Import allowlist"
+          "allowlist": "Import allowlist",
+          "add_device": "Add device",
+          "edit_device": "Edit a device"
         }
       },
       "wifi": {
         "title": "Wi-Fi",
-        "description": "Leave the password blank to keep the one already stored on this entry.",
+        "description": "Leave the Wi-Fi password blank to keep the one already stored on this entry.",
         "data": {
           "wifi_ssid": "Wi-Fi SSID",
           "wifi_password": "Wi-Fi password"
@@ -75,13 +80,40 @@
       },
       "security": {
         "title": "Security and timezone",
-        "description": "Leave the password blank to keep the stored device password. Leave the timezone blank to keep the stored zone.",
+        "description": "A new device login password is stored for later. Changing it here does not re-key any device. Leave the box blank to keep the stored password. Devices that already have a login are never changed, and Home Assistant keeps the password already stored for them. Leave the timezone blank to keep the stored zone. Tick Clear timezone to store no zone, so location.tz is not sent. A new Region/City name replaces the stored zone.",
         "data": {
-          "fleet_password": "Device password",
+          "fleet_password": "Device login password (admin)",
           "timezone": "Timezone",
+          "clear_timezone": "Clear timezone",
           "disable_cloud": "Disable Shelly Cloud",
           "disable_ap": "Disable the device access point",
           "disable_ble_rpc": "Disable Bluetooth RPC"
+        },
+        "data_description": {
+          "fleet_password": "Local web page and API password. Username is always admin. Stored only. Keep a copy in your password manager. A lost password needs a factory reset."
+        }
+      },
+      "secure": {
+        "title": "Secure profile",
+        "description": "Checklist for Secure devices. Typing a password here only stores it. It does not re-key devices. Secure devices and Apply profile set this login only on devices that have no password. Devices that already have a password are left unchanged, and Home Assistant keeps the password already stored for them.",
+        "data": {
+          "fleet_password": "Device login password (admin)",
+          "secure_rotate_password": "Set the device login when a device has none",
+          "secure_disable_cloud": "Disable Shelly Cloud",
+          "secure_disable_ap": "Disable the Wi-Fi access point",
+          "secure_disable_ble_rpc": "Disable Bluetooth RPC",
+          "secure_disable_mqtt": "Disable MQTT",
+          "secure_disable_ws": "Disable outbound websocket",
+          "secure_disable_debug": "Disable debug and UDP logging",
+          "secure_firmware_manual": "Keep firmware updates manual",
+          "secure_restrict_web_ui": "Restrict web UI discovery"
+        },
+        "data_description": {
+          "fleet_password": "Stored for devices that have no login. Does not replace a password a device already has.",
+          "secure_rotate_password": "Shelly.SetAuth with username admin, only when the device has no login.",
+          "secure_disable_ble_rpc": "Bluetooth itself stays on so an enabled scanner proxy keeps working.",
+          "secure_firmware_manual": "Gen2+ has no auto-update switch. This skips Shelly.Update. Cloud push stops when cloud is off.",
+          "secure_restrict_web_ui": "Turns off mDNS discovery. The web page still asks for the device login when a password is set."
         }
       },
       "inputs": {
@@ -130,8 +162,10 @@
       },
       "provisioning": {
         "title": "Provisioning",
+        "description": "Auto-adopt is ignored while Only provision the allowlist is on. With the allowlist option off, a factory-new Shelly in range can be adopted, including a neighbour's.",
         "data": {
           "update_firmware": "Update to stable firmware after adoption",
+          "auto_adopt": "Auto-adopt nearby new Shellies",
           "require_allowlist": "Only provision devices in the allowlist",
           "ble_scanner_mode": "Bluetooth scanner mode on each adopted Shelly",
           "concurrency": "Devices to provision at once",
@@ -141,24 +175,83 @@
       },
       "allowlist": {
         "title": "Import allowlist",
-        "description": "Path of a CSV you placed in this Home Assistant config directory, for example shelly_bulk/devices.csv. The file is read once and stored in this instance. It is not part of the integration.",
+        "description": "shelly_bulk/devices.csv is created on setup when it is missing, and an existing file is never overwritten. A header with no devices imports an empty list. Replace swaps the stored list. Leave replace off to merge.",
         "data": {
           "filename": "File in the config directory",
           "replace": "Replace the current allowlist"
         }
+      },
+      "add_device": {
+        "title": "Add device",
+        "description": "Appends one Shelly to shelly_bulk/devices.csv and the allowlist. A MAC that is already listed is left as you edited it.",
+        "data": {
+          "mac": "MAC address",
+          "name": "Name",
+          "room": "Room"
+        },
+        "data_description": {
+          "mac": "12 hex digits, with or without colons.",
+          "name": "Optional. Leave blank and fill it in later.",
+          "room": "Optional Home Assistant area name."
+        }
+      },
+      "edit_device": {
+        "title": "Edit a device",
+        "description": "Pick an adopted Shelly. The next form is filled with the settings read from that device.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "edit_fields": {
+        "title": "Device settings",
+        "description": "Only settings this model reports are shown. Saving writes them back and checks the device returned the same value. Fields that were not accepted: {details}.",
+        "data": {
+          "name": "Name",
+          "room": "Room",
+          "input_type": "Input type",
+          "input_mode": "Input behaviour",
+          "invert": "Invert",
+          "initial_state": "Power-on state",
+          "auto_on": "Auto on",
+          "auto_on_delay": "Auto on delay (seconds)",
+          "auto_off": "Auto off",
+          "auto_off_delay": "Auto off delay (seconds)",
+          "fade_rate": "Fade rate (1-5)",
+          "transition_duration": "Transition (seconds)",
+          "transition_up": "Ramp up (seconds)",
+          "transition_down": "Ramp down (seconds)",
+          "min_brightness": "Minimum brightness",
+          "max_brightness": "Maximum brightness",
+          "night_mode": "Night mode",
+          "night_brightness": "Night brightness",
+          "night_start": "Night mode start (HH:MM)",
+          "night_end": "Night mode end (HH:MM)"
+        }
+      },
+      "copy_settings": {
+        "title": "Copy settings to other devices",
+        "description": "Apply the same channel settings to other Shellies. The list is labelled with the model, so you can filter by it. Leave it empty to keep the change on the device you just edited. Problems: {details}.",
+        "data": {
+          "targets": "Other devices"
+        }
       }
     },
     "error": {
-      "invalid_timezone": "Enter a valid IANA timezone name.",
+      "invalid_timezone": "Enter an IANA timezone name such as Australia/Melbourne, Australia/Sydney, or Europe/London. Abbreviations such as AEDT and offsets such as UTC+11 are not accepted.",
       "invalid_brightness": "Set both minimum and maximum brightness, with minimum lower than maximum.",
       "invalid_night": "Night mode needs a start and end in HH:MM.",
       "not_found": "That file is not in the config directory.",
       "invalid_csv": "The CSV could not be read. It needs a mac column.",
-      "outside_config": "The path must stay inside the Home Assistant config directory."
+      "outside_config": "The path must stay inside the Home Assistant config directory.",
+      "invalid_mac": "Enter a 12-digit MAC address.",
+      "already_listed": "That MAC is already on the device list. Edit the CSV to change its name or room.",
+      "not_applied": "The device did not keep this value. It was left as it is.",
+      "not_reachable": "Shelly Bulk could not open this device. Check that it is online."
     },
     "abort": {
       "allowlist_imported": "Imported {count} devices into this Home Assistant instance.",
-      "not_loaded": "Shelly Bulk is not loaded yet. Finish setup and try again."
+      "not_loaded": "Shelly Bulk is not loaded yet. Finish setup and try again.",
+      "no_devices": "No Shelly devices have been added yet."
     }
   },
   "entity": {
@@ -174,12 +267,50 @@
       },
       "last_error": {
         "name": "Last error"
+      },
+      "security_audit": {
+        "name": "Security audit",
+        "state": {
+          "not_audited": "Not audited"
+        }
       }
+    },
+    "select": {
+      "scanner_mode": {
+        "name": "Bluetooth scanner mode",
+        "state": {
+          "active": "Active",
+          "auto": "Auto",
+          "passive": "Passive",
+          "disabled": "Disabled"
+        }
+      },
+      "input_mode": {"name": "Input behaviour"},
+      "power_on_state": {"name": "Power-on state"}
     },
     "switch": {
       "provisioning": {
         "name": "Provisioning mode"
-      }
+      },
+      "bluetooth": {"name": "Bluetooth"},
+      "ble_rpc": {"name": "Bluetooth RPC"},
+      "cloud": {"name": "Shelly Cloud"},
+      "access_point": {"name": "Wi-Fi access point"},
+      "mqtt": {"name": "MQTT"},
+      "eco_mode": {"name": "Eco mode"},
+      "status_led": {"name": "Status LED"},
+      "debug_logging": {"name": "Debug logging"},
+      "auto_adopt": {"name": "Auto-adopt nearby new Shellies"}
+    },
+    "button": {
+      "find_shelly": {"name": "Find my Shelly"},
+      "reload_device_list": {"name": "Reload device list"},
+      "identify": {"name": "Identify"}
+    },
+    "number": {
+      "auto_off_delay": {"name": "Auto off delay"},
+      "fade_rate": {"name": "Fade rate"},
+      "transition_duration": {"name": "Transition"}
     }
   },
   "issues": {
@@ -191,7 +322,7 @@
   "services": {
     "apply_profile": {
       "name": "Apply profile",
-      "description": "Apply the Shelly Bulk security and channel profile to Shelly devices already added by the core Shelly integration. Devices that already have authentication are updated only with the password stored on their Shelly entry. Their password is not replaced.",
+      "description": "Apply the Shelly Bulk security and channel profile to Shelly devices already added by the core Shelly integration. Sets the device login only when a device has no password. Devices that already have a password are not changed, and Home Assistant keeps the password already stored for them.",
       "fields": {
         "device_id": {
           "name": "Devices",
@@ -347,12 +478,74 @@
         },
         "filename": {
           "name": "Filename",
-          "description": "Path relative to the config directory, such as shelly_bulk/devices.csv."
+          "description": "Path relative to the config directory. Defaults to shelly_bulk/devices.csv, which is created if missing. A header with no devices imports an empty list."
         },
         "replace": {
           "name": "Replace",
           "description": "Replace the stored allowlist. When off, rows are merged by MAC."
         }
+      }
+    },
+    "secure_devices": {
+      "name": "Secure devices",
+      "description": "Apply the secure profile and read each checklist item back. Sets the stored device login only on devices that have no password. Does not replace an existing password. The password is not logged.",
+      "fields": {
+        "device_id": {"name": "Devices", "description": "Core Shelly devices to secure."},
+        "area_id": {"name": "Areas", "description": "Secure every core Shelly device in these areas."},
+        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "mac": {"name": "MAC address", "description": "Optional device MAC."},
+        "all_shelly": {"name": "All Shelly devices", "description": "Secure every core Shelly config entry."},
+        "rotate_password": {"name": "Set login when missing", "description": "Shelly.SetAuth with username admin, only when the device has no login. Does not replace an existing password."},
+        "disable_cloud": {"name": "Disable cloud", "description": "Turn off the Shelly Cloud connection."},
+        "disable_ap": {"name": "Disable access point", "description": "Turn off the device Wi-Fi access point."},
+        "disable_ble_rpc": {"name": "Disable Bluetooth RPC", "description": "Keep Bluetooth enabled for the scanner."},
+        "disable_mqtt": {"name": "Disable MQTT", "description": "Turn off outbound MQTT when the component exists."},
+        "disable_ws": {"name": "Disable outbound websocket", "description": "Turn off the outbound websocket client."},
+        "disable_debug": {"name": "Disable debug logging", "description": "Turn off MQTT, websocket, file, and UDP debug logs."},
+        "firmware_manual": {"name": "Manual firmware", "description": "Do not call Shelly.Update. There is no documented auto-update switch."},
+        "restrict_web_ui": {"name": "Restrict web UI", "description": "Stop mDNS discovery. Authentication still guards the web UI."}
+      }
+    },
+    "audit_security": {
+      "name": "Audit security",
+      "description": "Read each device's security state without changing it. Updates the Security audit sensor.",
+      "fields": {
+        "device_id": {"name": "Devices", "description": "Core Shelly devices to read. Omit, with no area or MAC, to audit every Shelly."},
+        "area_id": {"name": "Areas", "description": "Audit every core Shelly device in these areas."},
+        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "mac": {"name": "MAC address", "description": "Optional device MAC."},
+        "all_shelly": {"name": "All Shelly devices", "description": "Audit every core Shelly config entry."}
+      }
+    },
+    "set_advanced": {
+      "name": "Set advanced setting",
+      "description": "Change documented Gen2+ settings and read each one back. Models without the component are skipped.",
+      "fields": {
+        "device_id": {"name": "Devices", "description": "Core Shelly devices to update."},
+        "area_id": {"name": "Areas", "description": "Update every core Shelly device in these areas."},
+        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "mac": {"name": "MAC address", "description": "Optional device MAC."},
+        "all_shelly": {"name": "All Shelly devices", "description": "Update every core Shelly config entry."},
+        "channel": {"name": "Channel", "description": "Input or output index. Defaults to 0."},
+        "bluetooth": {"name": "Bluetooth", "description": "BLE.SetConfig enable. RPC is left as it is."},
+        "ble_rpc": {"name": "Bluetooth RPC", "description": "BLE rpc.enable. Bluetooth enable is left as it is."},
+        "scanner_mode": {"name": "Scanner mode", "description": "Core Shelly ble_scanner_mode: active, auto, passive, or disabled."},
+        "cloud": {"name": "Cloud", "description": "Cloud.SetConfig enable."},
+        "access_point": {"name": "Access point", "description": "WiFi.SetConfig ap.enable."},
+        "mqtt": {"name": "MQTT", "description": "MQTT.SetConfig enable, when the component exists."},
+        "eco_mode": {"name": "Eco mode", "description": "Sys device.eco_mode."},
+        "status_led": {"name": "Status LED", "description": "PLUGS_UI or POWERSTRIP_UI leds.mode."},
+        "debug_logging": {"name": "Debug logging", "description": "Sys debug sinks. Off clears them. On enables websocket debug only."},
+        "input_type": {"name": "Input type", "description": "switch or button."},
+        "input_mode": {"name": "Input behaviour", "description": "Output in_mode, including detached."},
+        "power_on_state": {"name": "Power-on state", "description": "initial_state for the output."},
+        "auto_on": {"name": "Auto on", "description": "Enable the auto-on timer."},
+        "auto_off": {"name": "Auto off", "description": "Enable the auto-off timer."},
+        "auto_on_delay": {"name": "Auto on delay", "description": "Seconds."},
+        "auto_off_delay": {"name": "Auto off delay", "description": "Seconds."},
+        "fade_rate": {"name": "Fade rate", "description": "button_fade_rate from 1 to 5."},
+        "transition_duration": {"name": "Transition duration", "description": "Seconds from 0% to 100%."},
+        "device_name": {"name": "Device name", "description": "Sys device.name on the Shelly."}
       }
     }
   }

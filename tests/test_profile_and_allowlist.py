@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from custom_components.shelly_bulk.models import AllowDevice, ChannelSettings
 from custom_components.shelly_bulk.profile import (
     build_set_auth,
     plan_config_calls,
+    plan_security_calls,
     security_from_entry,
 )
 from custom_components.shelly_bulk.redact import SecretFilter, redact
@@ -24,13 +26,33 @@ from custom_components.shelly_bulk.util import normalize_mac
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_english_translations_match_strings() -> None:
+    package = ROOT / "custom_components" / "shelly_bulk"
+    strings = json.loads((package / "strings.json").read_text(encoding="utf-8"))
+    english = json.loads((package / "translations" / "en.json").read_text(encoding="utf-8"))
+    assert english == strings
+    from custom_components.shelly_bulk.const import OPTIONS_MENU
+
+    menu = strings["options"]["step"]["init"]["menu_options"]
+    assert tuple(menu) == OPTIONS_MENU
+    for option, label in menu.items():
+        assert str(label).strip(), option
+
+
 def test_manifest_version_matches_constant() -> None:
-    manifest = (ROOT / "custom_components" / "shelly_bulk" / "manifest.json").read_text()
-    assert f'"version": "{VERSION}"' in manifest
+    manifest = json.loads((ROOT / "custom_components" / "shelly_bulk" / "manifest.json").read_text())
+    assert manifest["version"] == VERSION
+
+
+def test_readme_version_matches_manifest() -> None:
+    manifest = json.loads((ROOT / "custom_components" / "shelly_bulk" / "manifest.json").read_text())
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert f"Current version: {manifest['version']}" in readme
 
 
 def test_repository_has_no_shipped_site_data() -> None:
-    banned = ("Australia/Melbourne", "Australia/Sydney", "Cheviot", "A0:85:E3")
+    # IANA names such as Australia/Melbourne appear only as format examples.
+    banned = ("Cheviot", "A0:85:E3")
     roots = [ROOT / "custom_components", ROOT / "tools", ROOT / ".github"]
     files = [path for root in roots for path in root.rglob("*") if path.is_file()]
     files.extend(
@@ -84,6 +106,18 @@ def test_allowlist_csv_and_path_guard(tmp_path: Path) -> None:
         assert str(err) == "outside_config"
     else:
         raise AssertionError("path traversal was accepted")
+
+
+def test_empty_timezone_omits_location() -> None:
+    security = security_from_entry(
+        {"timezone": ""},
+        {"disable_cloud": True, "disable_ap": True, "disable_ble_rpc": True},
+        "",
+    )
+    calls = plan_security_calls(security)
+    assert all(call.method != "Sys.SetConfig" for call in calls)
+    blob = str([call.params for call in calls])
+    assert "location" not in blob
 
 
 def test_plan_detached_switch_and_dimmer_notes() -> None:

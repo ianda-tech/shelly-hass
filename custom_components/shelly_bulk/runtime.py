@@ -7,7 +7,7 @@ import csv
 import io
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.issue_registry import (
     IssueSeverity,
     async_create_issue,
@@ -30,13 +31,15 @@ from homeassistant.helpers.issue_registry import (
 )
 from homeassistant.helpers.storage import Store
 
-from .allowlist import parse_allowlist_csv, resolve_config_path
+from .allowlist import merge_allowlist, parse_allowlist_csv, resolve_config_path
 from .const import (
+    CONF_AUTO_ADOPT,
     CONF_BLE_SCANNER_MODE,
     CONF_DISABLE_AP,
     CONF_DISABLE_BLE_RPC,
     CONF_DISABLE_CLOUD,
     CONF_FLEET_PASSWORD,
+    DEVICE_LIST_RELATIVE,
     CONF_PROVISIONING_MINUTES,
     CONF_REQUIRE_ALLOWLIST,
     CONF_SITE_NAME,
@@ -51,9 +54,19 @@ from .const import (
     STORAGE_VERSION,
     VERSION,
 )
+from .device_list import append_device_rows, ensure_device_list, placeholder_name, update_device_row
+from .device_settings import apply_live_settings, channel_updates, read_live_settings
+from .discover import heard_from_advert, identify_output, rows_for_discovery
 from .models import AllowDevice, Allowlist, ChannelSettings
+from .advanced import read_setting, scanner_mode_valid, write_setting
 from .profile import build_set_auth, plan_config_calls, security_from_entry
 from .provision import Provisioner
+from .security import (
+    apply_secure_profile,
+    evaluate_security,
+    read_security_state,
+    secure_profile_from,
+)
 from .redact import SecretFilter, redact
 from .rpc import AuthRequiredError, async_execute_calls, async_open_rpc
 from .util import display_mac, normalize_mac
@@ -72,11 +85,14 @@ class FleetRuntime:
         self.failed = 0
         self.last_error = ""
         self.results: list[dict[str, Any]] = []
+        self.last_audit: list[dict[str, Any]] = []
         self.provisioner = Provisioner(self)
         self._listeners: list[Any] = []
         self._store = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
         self._extra_secrets: set[str] = set()
         self._log_filter = SecretFilter(self.secrets)
+        self._list_mtime: float | None = None
+        self._list_unsub = None
         _LOGGER.addFilter(self._log_filter)
 
     @property
@@ -88,12 +104,21 @@ class FleetRuntime:
         return bool(self.entry.options.get(CONF_REQUIRE_ALLOWLIST, True))
 
     @property
+    def auto_adopt(self) -> bool:
+        return bool(self.entry.options.get(CONF_AUTO_ADOPT, True))
+
+    @property
+    def effective_auto_adopt(self) -> bool:
+        """Auto-adopt runs only when the allowlist restriction is off."""
+        return self.auto_adopt and not self.require_allowlist
+
+    @property
     def pending(self) -> int:
         return self.provisioner.pending
 
     @property
     def provisioning_active(self) -> bool:
-        return self.provisioner.active
+        return self.provisioner.timed_running
 
     def secrets(self) -> list[str]:
         data = self.entry.data
@@ -133,8 +158,18 @@ class FleetRuntime:
         self.failed = int(stored.get("failed") or 0)
         self.last_error = str(stored.get("last_error") or "")
         self.results = list(stored.get("results") or [])
+        await self.ensure_device_list()
+        await self.reload_device_list(force=True)
+        if self.effective_auto_adopt:
+            await self.provisioner.start(continuous=True)
+        self._list_unsub = async_track_time_interval(
+            self.hass, self._poll_device_list, timedelta(seconds=30)
+        )
 
     async def async_close(self) -> None:
+        if self._list_unsub is not None:
+            self._list_unsub()
+            self._list_unsub = None
         await self.provisioner.stop("unloaded")
         _LOGGER.removeFilter(self._log_filter)
         await self._store.async_save(self._store_data())
@@ -211,7 +246,327 @@ class FleetRuntime:
         await self.provisioner.start(minutes)
 
     async def stop_provisioning(self) -> None:
-        await self.provisioner.stop("stopped")
+        await self.provisioner.stop_timed()
+
+    def device_list_path(self) -> Path:
+        return Path(self.hass.config.path(DEVICE_LIST_RELATIVE))
+
+    async def ensure_device_list(self) -> bool:
+        """Create shelly_bulk/devices.csv when it is missing. Never overwrites."""
+        path = self.device_list_path()
+        return await self.hass.async_add_executor_job(ensure_device_list, path)
+
+    async def _poll_device_list(self, _now) -> None:
+        await self.reload_device_list()
+
+    async def reload_device_list(self, *, force: bool = False) -> int:
+        """Merge the CSV into the allowlist. Blank cells do not wipe stored names."""
+        path = self.device_list_path()
+        await self.ensure_device_list()
+
+        def _read() -> tuple[float | None, str]:
+            if not path.is_file():
+                return None, ""
+            return path.stat().st_mtime, path.read_text(encoding="utf-8-sig")
+
+        mtime, text = await self.hass.async_add_executor_job(_read)
+        if not force and mtime == self._list_mtime:
+            return len(self.allowlist.devices)
+        self._list_mtime = mtime
+        parsed, errors = parse_allowlist_csv(text)
+        if errors and not parsed.devices and any("mac column" in err for err in errors):
+            self.set_last_error("Device list could not be read: " + "; ".join(errors[:3]))
+            return len(self.allowlist.devices)
+        merge_allowlist(self.allowlist, parsed)
+        self._store.async_delay_save(self._store_data, 0.1)
+        self.notify()
+        if errors:
+            self.set_last_error("Device list imported with row errors: " + "; ".join(errors[:3]))
+        return len(parsed.devices)
+
+    async def append_listed_devices(self, rows: list[dict[str, str]]) -> list[str]:
+        """Append new MACs to the CSV and the allowlist. Existing rows stay as written."""
+        path = self.device_list_path()
+        added = await self.hass.async_add_executor_job(append_device_rows, path, rows)
+        if not added:
+            return []
+        incoming = Allowlist()
+        added_set = set(added)
+        for row in rows:
+            try:
+                mac = normalize_mac(row["mac"])
+            except ValueError:
+                continue
+            if mac not in added_set:
+                continue
+            incoming.devices[mac] = AllowDevice(
+                mac=mac,
+                name=row.get("name") or "",
+                room=row.get("room") or "",
+                model_hint=row.get("model_hint") or "",
+            )
+        merge_allowlist(self.allowlist, incoming)
+
+        def _mtime() -> float | None:
+            return path.stat().st_mtime if path.is_file() else None
+
+        self._list_mtime = await self.hass.async_add_executor_job(_mtime)
+        self._store.async_delay_save(self._store_data, 0.1)
+        self.notify()
+        return added
+
+    async def note_new_device(
+        self,
+        mac: str,
+        *,
+        name: str = "",
+        room: str = "",
+        model_hint: str = "",
+        placeholder: bool = False,
+    ) -> list[str]:
+        """Record a newly seen Shelly. Does nothing when the MAC is already listed."""
+        plain = normalize_mac(mac)
+        if plain in self.allowlist:
+            return []
+        display_name = placeholder_name(model_hint, plain) if placeholder else name
+        added = await self.append_listed_devices(
+            [{"mac": plain, "name": display_name, "room": room, "model_hint": model_hint}]
+        )
+        if added and placeholder:
+            self._notify(
+                "Rename a new Shelly",
+                f"{display_mac(plain)} ({model_hint or 'Shelly'}) was adopted as \"{display_name}\" "
+                "with a blank room. Rename it in shelly_bulk/devices.csv or in Home Assistant.",
+                "shelly_bulk_adopted",
+            )
+        return added
+
+    async def add_listed_device(self, mac: str, name: str, room: str) -> bool:
+        plain = normalize_mac(mac)
+        if plain in self.allowlist:
+            return False
+        added = await self.append_listed_devices(
+            [{"mac": plain, "name": name.strip(), "room": room.strip(), "model_hint": ""}]
+        )
+        return bool(added)
+
+    def _discover_heard(self):
+        from homeassistant.components import bluetooth
+
+        if "bluetooth" not in self.hass.config.components:
+            return []
+        infos = bluetooth.async_discovered_service_info(self.hass, connectable=False)
+        heard = []
+        seen: set[str] = set()
+        for info in infos:
+            item = heard_from_advert(
+                getattr(info, "name", "") or "",
+                getattr(info, "manufacturer_data", None),
+                int(getattr(info, "rssi", 0) or 0),
+                str(getattr(info, "source", "") or ""),
+            )
+            if item is None or item.mac in seen:
+                continue
+            seen.add(item.mac)
+            heard.append(item)
+        return heard
+
+    async def find_my_shelly(self) -> list[dict[str, str]]:
+        """Scan advertisements. Adopt when auto-adopt is effective, otherwise list only."""
+        heard = self._discover_heard()
+        known = set(self.allowlist.devices)
+        added_already = set()
+        for item in heard:
+            if self.shelly_entry_for(item.mac) is not None:
+                added_already.add(item.mac)
+        adopt = self.effective_auto_adopt
+        rows, locked = rows_for_discovery(heard, known=known, already_added=added_already, adopt=adopt)
+        for mac in locked:
+            hint = next((item.model_hint for item in heard if item.mac == mac), "")
+            self.flag_locked(mac, hint)
+        added = await self.append_listed_devices(rows)
+        added_set = set(added)
+        listed = [row for row in rows if row["mac"] in added_set]
+        if adopt and listed:
+            if not self.provisioner.active:
+                await self.provisioner.start(continuous=True)
+            await self.provisioner.scan_once()
+        self._notify_find(listed, adopt=adopt)
+        return listed
+
+    async def set_auto_adopt(self, enabled: bool) -> None:
+        options = dict(self.entry.options)
+        options[CONF_AUTO_ADOPT] = bool(enabled)
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+        if self.effective_auto_adopt:
+            await self.provisioner.start(continuous=True)
+        else:
+            await self.provisioner.stop_continuous()
+
+    async def identify_device(self, entry: ConfigEntry) -> str:
+        session = await self._open_shelly(entry)
+        try:
+            return await identify_output(session)
+        except ValueError as err:
+            raise ServiceValidationError("This Shelly has no switch or light output to identify.") from err
+        finally:
+            await session.shutdown()
+
+    def _notify(self, title: str, message: str, notification_id: str) -> None:
+        try:
+            from homeassistant.components.persistent_notification import async_create
+
+            async_create(self.hass, message, title=title, notification_id=notification_id)
+        except Exception:  # noqa: BLE001
+            _LOGGER.info("%s: %s", title, message)
+
+    def _notify_find(self, listed: list[dict[str, str]], *, adopt: bool) -> None:
+        if self.auto_adopt and self.require_allowlist:
+            extra = (
+                "\n\nOnly provision the allowlist is on, so auto-adopt is not taking devices "
+                "that are not on the list. These were added to the device list only."
+            )
+        elif adopt:
+            extra = (
+                "\n\nAuto-adopt is on, so factory-default devices are being provisioned. "
+                "Rename the placeholder names in shelly_bulk/devices.csv."
+            )
+        else:
+            extra = "\n\nAuto-adopt is off, so these were added to the device list only."
+        if not listed:
+            message = "No new Shelly advertisements were heard." + extra
+        else:
+            lines = [
+                f"{display_mac(item['mac'])}  {item.get('model_hint') or 'unknown model'}  "
+                f"RSSI {item.get('rssi') or 0}  via {item.get('source') or 'unknown scanner'}"
+                for item in listed
+            ]
+            message = "\n".join(lines) + extra
+        self._notify("Find my Shelly", message, "shelly_bulk_find")
+
+    def adopted_device_choices(self) -> list[dict[str, str]]:
+        """Label each core Shelly as name, room, model, and MAC."""
+        area_reg = ar.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
+        choices: list[dict[str, str]] = []
+        for entry in self.hass.config_entries.async_entries(SHELLY_DOMAIN):
+            devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+            device = next((item for item in devices if item.via_device_id is None), None)
+            if device is None and devices:
+                device = devices[0]
+            name = ""
+            room = ""
+            if device is not None:
+                name = device.name_by_user or device.name or ""
+                if device.area_id:
+                    area = area_reg.async_get_area(device.area_id)
+                    room = area.name if area else ""
+            if not name:
+                name = entry.title or "Shelly"
+            model = str(entry.data.get("model") or "unknown model")
+            mac = ""
+            if entry.unique_id:
+                try:
+                    mac = display_mac(entry.unique_id)
+                except ValueError:
+                    mac = str(entry.unique_id)
+            label = " · ".join(part for part in (name, room or "no room", model, mac) if part)
+            choices.append({"id": entry.entry_id, "label": label, "room": room, "model": model})
+        return choices
+
+    async def read_device_form(self, entry_id: str):
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != SHELLY_DOMAIN:
+            raise ServiceValidationError("That Shelly is not installed")
+        session = await self._open_shelly(entry)
+        try:
+            return await read_live_settings(session)
+        finally:
+            await session.shutdown()
+
+    async def save_device_form(self, entry_id: str, values: dict[str, Any]) -> dict[str, str]:
+        """Apply the form, then update Home Assistant and the device list row."""
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != SHELLY_DOMAIN:
+            raise ServiceValidationError("That Shelly is not installed")
+        rpc_values = {key: value for key, value in values.items() if key != "room"}
+        session = await self._open_shelly(entry)
+        try:
+            errors = await apply_live_settings(session, rpc_values)
+        finally:
+            await session.shutdown()
+        name = "" if "name" in errors else str(values.get("name") or "")
+        room = str(values.get("room") or "")
+        if ("name" in values and "name" not in errors) or "room" in values:
+            await self._assign_name_area(entry, name, room)
+        csv_changes: dict[str, str] = {}
+        if "name" in values and "name" not in errors:
+            csv_changes["name"] = name
+        if "room" in values:
+            csv_changes["room"] = room
+        if "input_mode" in values and "input_mode" not in errors:
+            csv_changes["input"] = str(values["input_mode"])
+        if "initial_state" in values and "initial_state" not in errors:
+            csv_changes["initial_state"] = str(values["initial_state"])
+        if "fade_rate" in values and "fade_rate" not in errors:
+            csv_changes["fade_rate"] = str(values["fade_rate"])
+        if "transition_duration" in values and "transition_duration" not in errors:
+            csv_changes["transition"] = str(values["transition_duration"])
+        if csv_changes and entry.unique_id:
+            await self._write_csv_changes(str(entry.unique_id), csv_changes)
+        self.notify()
+        return errors
+
+    async def copy_channel_settings(self, entry_ids: list[str], values: dict[str, Any]) -> dict[str, str]:
+        """Apply channel settings to other devices. Names and rooms are not copied."""
+        updates = channel_updates(values)
+        problems: dict[str, str] = {}
+        for entry_id in entry_ids:
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            if entry is None or entry.domain != SHELLY_DOMAIN:
+                problems[entry_id] = "missing"
+                continue
+            session = await self._open_shelly(entry)
+            try:
+                field_errors = await apply_live_settings(session, updates)
+            finally:
+                await session.shutdown()
+            if field_errors:
+                problems[entry_id] = ", ".join(sorted(field_errors))
+                continue
+            csv_changes: dict[str, str] = {}
+            if "input_mode" in updates:
+                csv_changes["input"] = str(updates["input_mode"])
+            if "initial_state" in updates:
+                csv_changes["initial_state"] = str(updates["initial_state"])
+            if "fade_rate" in updates:
+                csv_changes["fade_rate"] = str(updates["fade_rate"])
+            if "transition_duration" in updates:
+                csv_changes["transition"] = str(updates["transition_duration"])
+            if csv_changes and entry.unique_id:
+                await self._write_csv_changes(str(entry.unique_id), csv_changes)
+        return problems
+
+    async def _write_csv_changes(self, mac: str, changes: dict[str, str]) -> None:
+        path = self.device_list_path()
+
+        def _update() -> bool:
+            return update_device_row(path, mac, changes)
+
+        updated = await self.hass.async_add_executor_job(_update)
+        if not updated:
+            row = {"mac": mac, "name": "", "room": "", "model_hint": ""}
+            row.update(changes)
+            await self.append_listed_devices([row])
+            return
+        device = self.allowlist.get(mac)
+        if device is not None:
+            if "name" in changes:
+                device.name = changes["name"]
+            if "room" in changes:
+                device.room = changes["room"]
+        self._list_mtime = await self.hass.async_add_executor_job(lambda: path.stat().st_mtime if path.is_file() else None)
+        self._store.async_delay_save(self._store_data, 0.1)
 
     async def async_import_allowlist(self, filename: str, replace: bool = True) -> int:
         path = resolve_config_path(self.hass.config.path(), filename)
@@ -634,6 +989,225 @@ class FleetRuntime:
             kwargs["area_id"] = area.id
         dev_reg.async_update_device(primary.id, **kwargs)
         return f"Home Assistant name/area updated ({room})" if room or name else ""
+
+    async def secure_devices(self, **selectors: Any) -> list[dict[str, Any]]:
+        """Apply the secure profile and read each checklist item back."""
+        overrides = {key: selectors[key] for key in selectors if key in {
+            "rotate_password",
+            "disable_cloud",
+            "disable_ap",
+            "disable_ble_rpc",
+            "disable_mqtt",
+            "disable_ws",
+            "disable_debug",
+            "firmware_manual",
+            "restrict_web_ui",
+        }}
+        profile = secure_profile_from(self.entry.options, overrides)
+        password = str(self.entry.data.get(CONF_FLEET_PASSWORD) or "")
+        if profile.rotate_password and not password:
+            raise ServiceValidationError(
+                "Set the device login password (admin) under Configure. "
+                "Saving it there stores it for devices that have no login. It does not change devices by itself."
+            )
+        entries = self._select_shelly_entries(
+            device_ids=selectors.get("device_ids") or set(),
+            area_ids=selectors.get("area_ids") or set(),
+            mac=selectors.get("mac"),
+            all_shelly=bool(selectors.get("all_shelly")),
+            model_contains=selectors.get("model_contains"),
+        )
+        if not entries:
+            raise ServiceValidationError("No core Shelly devices matched")
+        reports = []
+        for entry in entries:
+            reports.append(await self._secure_one(entry, profile, password))
+        self.last_audit = reports
+        self.notify()
+        return reports
+
+    async def audit_devices(self, **selectors: Any) -> list[dict[str, Any]]:
+        """Read security state without changing devices."""
+        profile = secure_profile_from(self.entry.options, None)
+        entries = self._select_shelly_entries(
+            device_ids=selectors.get("device_ids") or set(),
+            area_ids=selectors.get("area_ids") or set(),
+            mac=selectors.get("mac"),
+            all_shelly=bool(selectors.get("all_shelly")) or not any(
+                (selectors.get("device_ids"), selectors.get("area_ids"), selectors.get("mac"))
+            ),
+            model_contains=selectors.get("model_contains"),
+        )
+        if not entries:
+            raise ServiceValidationError("No core Shelly devices matched")
+        reports = []
+        for entry in entries:
+            reports.append(await self._audit_one(entry, profile))
+        self.last_audit = reports
+        self.notify()
+        return reports
+
+    async def set_advanced(self, settings: dict[str, Any], **selectors: Any) -> list[dict[str, Any]]:
+        """Apply advanced settings and return the read-back for each device."""
+        if not settings:
+            raise ServiceValidationError("Choose at least one advanced setting")
+        entries = self._select_shelly_entries(
+            device_ids=selectors.get("device_ids") or set(),
+            area_ids=selectors.get("area_ids") or set(),
+            mac=selectors.get("mac"),
+            all_shelly=bool(selectors.get("all_shelly")),
+            model_contains=selectors.get("model_contains"),
+        )
+        if not entries:
+            raise ServiceValidationError("No core Shelly devices matched")
+        channel = int(selectors.get("channel") or 0)
+        reports = []
+        for entry in entries:
+            reports.append(await self._advanced_one(entry, settings, channel))
+        return reports
+
+    async def read_device_setting(self, entry: ConfigEntry, key: str, channel: int = 0) -> Any:
+        if key == "scanner_mode":
+            return str(entry.options.get(CONF_BLE_SCANNER_MODE) or "disabled")
+        session = await self._open_shelly(entry)
+        try:
+            return await read_setting(session, key, channel=channel)
+        finally:
+            await session.shutdown()
+
+    async def write_device_setting(self, entry: ConfigEntry, key: str, value: Any, channel: int = 0) -> Any:
+        if key == "scanner_mode":
+            mode = str(value)
+            if not scanner_mode_valid(mode):
+                raise ServiceValidationError(f"Scanner mode must be one of {', '.join(BLE_SCANNER_MODES)}")
+            options = dict(entry.options)
+            options[CONF_BLE_SCANNER_MODE] = mode
+            self.hass.config_entries.async_update_entry(entry, options=options)
+            updated = self.hass.config_entries.async_get_entry(entry.entry_id) or entry
+            return str(updated.options.get(CONF_BLE_SCANNER_MODE) or mode)
+        session = await self._open_shelly(entry)
+        try:
+            read_back, note = await write_setting(session, key, value, channel=channel)
+        finally:
+            await session.shutdown()
+        if note:
+            raise ServiceValidationError(note)
+        return read_back
+
+    async def _open_shelly(self, entry: ConfigEntry):
+        host = entry.data.get(CONF_HOST)
+        if not host:
+            raise ServiceValidationError("The Shelly entry has no host")
+        username = entry.data.get(CONF_USERNAME) or None
+        password = entry.data.get(CONF_PASSWORD) or None
+        if username and not password:
+            username = None
+        return await self._connect_with_retries(
+            host,
+            int(entry.data.get(CONF_PORT) or 80),
+            username,
+            password,
+            bool(entry.data.get(CONF_VERIFY_SSL, False)),
+        )
+
+    async def _secure_one(self, entry: ConfigEntry, profile, password: str) -> dict[str, Any]:
+        mac = entry.unique_id or entry.entry_id
+        notes: list[str] = []
+        session = None
+        try:
+            session = await self._open_shelly(entry)
+            if int((session.shelly or {}).get("gen") or 0) == 1:
+                return self._audit_row(mac, {"ok": False, "issues": ["Gen1 devices are not supported"]}, notes)
+            auth_set = await apply_secure_profile(session, profile, password, notes, self.redact)
+            if auth_set:
+                params = build_set_auth(str(session.shelly.get("id") or "device"), password)
+                self._extra_secrets.add(password)
+                self._extra_secrets.add(params["ha1"])
+            await session.shutdown()
+            session = None
+            reconnected = True
+            if auth_set:
+                self._store_shelly_password(entry, password)
+                try:
+                    session = await self._connect_with_retries(
+                        entry.data.get(CONF_HOST),
+                        int(entry.data.get(CONF_PORT) or 80),
+                        "admin",
+                        password,
+                        bool(entry.data.get(CONF_VERIFY_SSL, False)),
+                    )
+                except Exception as err:  # noqa: BLE001
+                    reconnected = False
+                    notes.append(f"Reconnect failed: {self.redact(str(err))}")
+            if session is None and reconnected:
+                session = await self._open_shelly(entry)
+            state = await read_security_state(session, notes, self.redact) if session is not None else {"shelly": {}}
+            report = evaluate_security(state, profile, reconnected)
+            report["mac"] = display_mac(mac) if _is_mac(str(mac)) else str(mac)
+            report["notes"] = notes
+            self.record(
+                mac,
+                "secured" if report["ok"] else "not_secure",
+                "; ".join(report["issues"]),
+                notes=notes,
+            )
+            return report
+        except Exception as err:  # noqa: BLE001
+            message = self.redact(str(err))
+            self.record(mac, "failed", message, notes=notes)
+            return self._audit_row(mac, {"ok": False, "issues": [message], "reconnected": False}, notes)
+        finally:
+            if session is not None:
+                await session.shutdown()
+
+    async def _audit_one(self, entry: ConfigEntry, profile) -> dict[str, Any]:
+        mac = entry.unique_id or entry.entry_id
+        notes: list[str] = []
+        session = None
+        try:
+            session = await self._open_shelly(entry)
+            state = await read_security_state(session, notes, self.redact)
+            report = evaluate_security(state, profile, True)
+            report["mac"] = display_mac(mac) if _is_mac(str(mac)) else str(mac)
+            report["notes"] = notes
+            return report
+        except Exception as err:  # noqa: BLE001
+            return self._audit_row(mac, {"ok": False, "issues": [self.redact(str(err))], "reconnected": False}, notes)
+        finally:
+            if session is not None:
+                await session.shutdown()
+
+    async def _advanced_one(self, entry: ConfigEntry, settings: dict[str, Any], channel: int) -> dict[str, Any]:
+        mac = entry.unique_id or entry.entry_id
+        read_back: dict[str, Any] = {}
+        notes: list[str] = []
+        for key, value in settings.items():
+            if value is None:
+                continue
+            try:
+                read_back[key] = await self.write_device_setting(entry, key, value, channel)
+            except Exception as err:  # noqa: BLE001
+                notes.append(f"{key}: {self.redact(str(err))}")
+                read_back[key] = None
+        return {
+            "mac": display_mac(mac) if _is_mac(str(mac)) else str(mac),
+            "read_back": read_back,
+            "notes": notes,
+            "ok": not notes,
+        }
+
+    def _store_shelly_password(self, entry: ConfigEntry, password: str) -> None:
+        data = dict(entry.data)
+        data[CONF_USERNAME] = "admin"
+        data[CONF_PASSWORD] = password
+        self.hass.config_entries.async_update_entry(entry, data=data)
+
+    def _audit_row(self, mac: str, report: dict[str, Any], notes: list[str]) -> dict[str, Any]:
+        report.setdefault("issues", [])
+        report["mac"] = display_mac(mac) if _is_mac(str(mac)) else str(mac)
+        report["notes"] = notes
+        report.setdefault("ok", False)
+        return report
 
     async def _wait_settled(self, entry: ConfigEntry) -> None:
         deadline = asyncio.get_running_loop().time() + 30

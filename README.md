@@ -1,8 +1,50 @@
+<p align="center">
+  <img src="custom_components/shelly_bulk/brand/logo.png" alt="Shelly Bulk" width="256">
+</p>
+
 # Shelly Bulk
+
+[![Latest release](https://img.shields.io/github/v/release/ianda-tech/shelly-hass?display_name=tag&sort=semver&label=Latest%20release&style=for-the-badge&color=2ea44f)](https://github.com/ianda-tech/shelly-hass/releases/latest)
+[![Latest release](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fianda-tech%2Fshelly-hass%2Fmain%2Fcustom_components%2Fshelly_bulk%2Fmanifest.json&query=%24.version&prefix=v&label=Latest%20release&style=for-the-badge&color=2ea44f)](https://github.com/ianda-tech/shelly-hass/releases/latest)
+[![released](https://img.shields.io/github/release-date/ianda-tech/shelly-hass?label=released&style=for-the-badge)](https://github.com/ianda-tech/shelly-hass/releases/latest)
+
+**Current version: 0.2.3.** Bump this line in the same change as `version` in `custom_components/shelly_bulk/manifest.json`.
+
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![License: MIT](https://img.shields.io/github/license/ianda-tech/shelly-hass)](LICENSE)
+[![hassfest | validate | tests](https://img.shields.io/github/actions/workflow/status/ianda-tech/shelly-hass/ci.yml?branch=main&label=hassfest%20%7C%20validate%20%7C%20tests)](https://github.com/ianda-tech/shelly-hass/actions/workflows/ci.yml)
+[![Home Assistant 2025.12+](https://img.shields.io/badge/home%20assistant-2025.12%2B-blue.svg)](https://github.com/ianda-tech/shelly-hass/blob/main/hacs.json)
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ianda-tech&repository=shelly-hass&category=integration)
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=shelly_bulk)
 
 Shelly Bulk (`shelly_bulk`) is a [HACS](https://hacs.xyz/) custom integration for installers who commission a lot of factory-new Shelly devices into [Home Assistant](https://www.home-assistant.io/). It sits **beside** the built-in Shelly integration. It does not replace it, and it does not speak a private provisioning protocol when Home Assistant already can.
 
-You enter every site value yourself, after install, on the Home Assistant instance that will own the devices: Wi-Fi name and password, the device password, timezone, and the list of MAC addresses, names, and rooms. None of that is shipped in this repository.
+You enter every site value yourself, after install, on the Home Assistant instance that will own the devices: Wi-Fi name and password, the device login password, timezone, and the list of MAC addresses, names, and rooms. None of that is shipped in this repository.
+
+## Install or update to the latest
+
+The **Latest release** badges above go to the [latest GitHub release](https://github.com/ianda-tech/shelly-hass/releases/latest). The release badge reads the published tag. Until that tag exists, the second badge reads `version` from [`manifest.json` on main](https://github.com/ianda-tech/shelly-hass/blob/main/custom_components/shelly_bulk/manifest.json), so a version is still shown. The date badge is the release date.
+
+### HACS
+
+1. Use **Open HACS repository** above. It adds `ianda-tech/shelly-hass` as a custom integration repository.
+2. Open **Shelly Bulk** in HACS. Use the three-dot menu, choose **Redownload**, and pick the newest version.
+3. Restart Home Assistant.
+
+Updates also appear under **Settings → Updates**.
+
+### Manual
+
+1. Download the **Source code** zip from the [latest release](https://github.com/ianda-tech/shelly-hass/releases/latest).
+2. Copy `custom_components/shelly_bulk` into `/config/custom_components`, replacing the folder that is already there.
+3. Restart Home Assistant.
+
+The folder must contain `manifest.json`. Do not rename the domain.
+
+### Which version is installed
+
+**Settings → Devices & services → Shelly Bulk** shows the version on the integration card.
 
 ## What it does, and why
 
@@ -43,15 +85,17 @@ Profiles are sent with Gen2+ RPC (`Sys.SetConfig`, `WiFi.SetConfig`, `Cloud.SetC
 - An IoT SSID that is **2.4 GHz** and not WPA3-only. 5 GHz-only, band steering, captive portals, and client isolation break the join.
 - DHCP space for the whole batch.
 - mDNS (or a reflector) between the IoT VLAN and Home Assistant. After Wi-Fi provisioning, core Shelly waits for the device to announce itself. Without mDNS the flow falls back to an active lookup and often times out.
-- Admin access to Home Assistant. Shelly Bulk writes the core Shelly config entry (scanner mode, and the device password after `Shelly.SetAuth`).
+- Admin access to Home Assistant. Shelly Bulk writes the core Shelly config entry (scanner mode, and username `admin` plus the device login password after `Shelly.SetAuth`).
 
-## Install with HACS
+## Quick install
 
-1. In HACS, open **Integrations**, then the menu, then **Custom repositories**.
-2. Add `https://github.com/ianda-tech/shelly-hass` as an **Integration**.
-3. Download **Shelly Bulk**.
-4. Restart Home Assistant.
-5. Go to **Settings → Devices & services → Add integration → Shelly Bulk**.
+1. Install or update with the steps in [Install or update to the latest](#install-or-update-to-the-latest).
+2. Restart Home Assistant if you have not already.
+3. Use **Add integration** above. The domain is `shelly_bulk`. Enter the site values on that instance. Nothing in this repository is pre-filled.
+
+A push to `main` publishes a release named `v` plus the version in `manifest.json`, when that tag does not already exist. The release notes are that version's section of `CHANGELOG.md`. HACS installs the files from the git tag.
+
+The same buttons work only when you are on your own Home Assistant and My Home Assistant can reach it.
 
 ## Install manually
 
@@ -67,27 +111,68 @@ Every value below is typed into **this** Home Assistant. The integration package
 
 1. Start the config flow. Give the entry a site name. That name is only a label.
 2. Enter the Wi-Fi SSID and password the new Shellies should join. They are stored in the config entry. Diagnostics and logs mask them.
-3. Optionally enter one device password. Leave it blank if these devices should stay without authentication. Shelly Bulk will not change a device that already has a password.
-4. Enter an IANA timezone, the same kind of name Home Assistant shows in its own settings. The field is empty on purpose. The description only tells you which zone this Home Assistant is using, so you can type it if that is the one you want.
+3. Optionally enter one **device login password (admin)**. This is not the Wi-Fi password. See [Device login (auth)](#device-login-auth). Leave it blank and new devices stay open, with no login.
+4. Timezone is optional. The box is pre-filled from this Home Assistant instance, the zone under **Settings → System → General**. It is not a value shipped with the integration. The format is an IANA tz database name, case-sensitive, `Region/City`. Examples: `Australia/Melbourne`, `Australia/Sydney`, `Europe/London`. Abbreviations such as `AEDT` and offsets such as `UTC+11` are rejected. The list is the TZ identifier column on [Wikipedia's tz database list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). It sets the device clock zone for on-device schedules and sunrise/sunset, which matters more when Shelly Cloud is off because the device will not auto-detect a zone. Leave it blank and adoption still works: no `location.tz` is sent. Change or clear it later under **Configure → Security and timezone**.
 5. On the next step, choose the generic behaviour:
    - **Disable Shelly Cloud** and **disable the access point** default to on.
    - **Disable Bluetooth RPC** defaults to on, which matches what core Shelly already did. Turn it off if you still need Bluetooth RPC after setup. The scanner proxy does not need RPC.
-   - **Only provision devices in the allowlist** defaults to on. Leave it on. Turning it off adopts every factory-new Shelly any proxy can hear.
+   - **Auto-adopt nearby new Shellies** defaults to on. It adopts a factory-new Shelly (no login, setup window open) even when that MAC is not on the list.
+   - **Only provision devices in the allowlist** defaults to on, and it overrides auto-adopt. While it is on, devices that are not on the list are left alone. Turn it off only if you want every factory-new Shelly in range. That includes a neighbour's new Shelly.
    - **Bluetooth scanner mode** defaults to **Active**, which is what you want while commissioning. **Auto** (on recent Home Assistant) uses less airtime later. **Passive** and **Disabled** are there when you are done.
    - Concurrency, retries, and how long provisioning mode stays armed.
 
-You can change all of this later under **Configure** on the integration card: Wi-Fi, security, input profile, output profile, dimmer profile, provisioning, and allowlist import.
+You can change all of this later under **Configure** on the integration card: Wi-Fi, security, input profile, output profile, dimmer profile, provisioning, allowlist import, and add device. The hub device also has **Auto-adopt nearby new Shellies**, **Find my Shelly**, and **Reload device list**.
 
-### Device list
+## Device login (auth)
 
-Put a CSV somewhere under the Home Assistant config directory, for example `config/shelly_bulk/devices.csv`. Then either:
+One password, shared by the devices Shelly Bulk sets up. The username is always `admin`. It is the password for each Shelly's local web page and its local API. After Shelly Bulk sets it, `admin` and that password are written onto that device's core Shelly config entry, so Home Assistant stays connected.
 
-- **Settings → Devices & services → Shelly Bulk → Configure → Import allowlist**, and enter `shelly_bulk/devices.csv`, or
-- call the `shelly_bulk.import_allowlist` service with that filename.
+Leave the field blank and devices stay open, with no login.
 
-The file is read once and stored in Home Assistant's `.storage`. It is not part of this repository, and Shelly Bulk will not follow a path that escapes the config directory. Import again when the list changes.
+Saving a new password under **Configure → Security and timezone** or **Configure → Secure profile** only stores it on the Shelly Bulk entry. It does not re-key devices. Put the password in your password manager. Shelly Bulk cannot recover a lost password. Recovering the device means a factory reset.
+
+The **Security audit** sensor stays `not_audited` until you run **Audit security** or **Secure devices**. After that, its attributes list each device. `auth_on: false` means that Shelly has no login.
+
+| Scenario | What happens |
+| --- | --- |
+| New or factory device during adoption, password filled in | `Shelly.SetAuth` sets username `admin` and this password. Shelly Bulk saves both onto the core Shelly entry. |
+| New or factory device, password left blank | The device stays open. No login is set. |
+| Existing device with no password, and you run **Secure devices** or **Apply profile** | The stored password is applied, then saved onto that Shelly entry. Secure devices does this only when **Set the device login when a device has none** is on. |
+| Existing device that already has a password | The device password is not changed. Home Assistant keeps using the password already stored on that Shelly entry. |
+| You change the password in Configure | The new value is stored for the next device that still has no login. Devices that already have a password are not re-keyed. |
+| The password is lost | Factory-reset the Shelly. Shelly Bulk will not guess, and it will not overwrite a device that already has a login. |
+
+## Device list
+
+On setup, and every time Shelly Bulk loads, it creates `config/shelly_bulk/devices.csv` if that file is missing. The new file is a header (`mac,name,room,model_hint,input,initial_state,fade_rate,transition`) plus comment lines. There is no real device data. An existing file is never overwritten. Lines that start with `#` are ignored, so a header with no devices imports as an empty list, not an error.
+
+Edit it with the File editor, Samba, or the Studio Code Server add-on. **Reload device list** reads it again. Shelly Bulk also re-reads when the file's modification time changes. A blank name or room cell does not wipe a name you already stored. Rows that are missing from the file are not deleted on reload. **Configure → Import allowlist** and `shelly_bulk.import_allowlist` default to `shelly_bulk/devices.csv`. **Configure → Add device** appends one MAC, name, and room.
 
 While "only provision the allowlist" is on, an empty list adopts nothing. The last-error sensor says so.
+
+## Find my Shelly
+
+**Find my Shelly** on the Shelly Bulk device asks every Home Assistant Bluetooth scanner and proxy for Shelly advertisements. A MAC that is not already added, and not already on the device list, is appended. The name and room are left blank and `model_hint` is filled in. Rows you have edited are not rewritten, and a MAC is not added twice. Devices that already have a login are skipped.
+
+A persistent notification lists each new device: MAC, model, RSSI, and which scanner heard it.
+
+When **Auto-adopt nearby new Shellies** is effectively on (the switch is on, and Only provision the allowlist is off), Find my Shelly also starts an adoption pass immediately. When auto-adopt is off, or the allowlist option overrides it, Find my Shelly only adds the rows.
+
+A device that is advertising with Bluetooth RPC off raises the setup-window repair. Power-cycle it. Shelly Bulk does not guess a password.
+
+## Auto-adopt nearby new Shellies
+
+The switch is on the Shelly Bulk device and the same choice is in the setup form. It defaults to on.
+
+When it is on and **Only provision the allowlist** is off, a factory-default Shelly (no login, setup window still open) is adopted with the full flow: Wi-Fi, security, device login password, timezone, and any channel profile you enabled. It does not have to be on the list. After adoption it is appended to `devices.csv` with a placeholder name (model plus the last 4 characters of the MAC) and a blank room. A notification asks you to rename it.
+
+Devices that already have a login, and devices already added in Home Assistant, are not touched. Concurrency still limits how many run at once. A locked device (setup window closed) raises a repair instead of being retried.
+
+**Only provision the allowlist overrides auto-adopt.** While that option is on, auto-adopt does not take a device that is not on the list. The switch stays on and its status says it is paused. Turn the allowlist option off and a neighbour's factory-new Shelly in Bluetooth range can be adopted.
+
+## Identify
+
+Each adopted Shelly gets an **Identify** button. Pressing it toggles the first output for about 2 seconds (`Switch.Set` with `toggle_after`, or the same shape on a light). The button is disabled by default on relays, plugs, and unknown models, because a toggle can energise a connected load. Light-like models (dimmer, bulb, RGB, strip) are enabled by default. Enable the button on the device page only when you are sure a short toggle is safe.
 
 ## Bulk add
 
@@ -117,7 +202,7 @@ Shelly Bulk raises a repair and sets the last-error sensor when an allowlisted d
    - wait while core Shelly provisions Wi-Fi and creates the device
    - set that Shelly's Bluetooth scanner to the mode you chose, so the next devices are heard further away
    - apply cloud, access point, Bluetooth RPC, timezone, name, and any channel profile you enabled
-   - if you set a device password, call `Shelly.SetAuth` and write `admin` plus that password into the core Shelly entry so Home Assistant stays connected
+   - if you set a device login password, call `Shelly.SetAuth` (username `admin`) and write `admin` plus that password into the core Shelly entry so Home Assistant stays connected. A blank password leaves the device open
    - set the Home Assistant device name and area from the CSV
 6. Watch **Devices adopted**, **Devices pending**, **Devices failed**, and **Last error**.
 7. Export a report (below). Power-cycle anything that failed because the window closed, then run provisioning again. Devices already added are left alone. Devices that already have authentication are not sent a password and are not modified during adoption.
@@ -129,17 +214,17 @@ Firmware update, if you enabled it, starts `Shelly.Update` with `stage: stable` 
 
 ## Profiles
 
-Profiles are off until you opt in. Security choices from the config flow (cloud, access point, Bluetooth RPC, timezone, device password, scanner mode) are applied on adoption because you set them there. Input, output, and dimmer sections are applied only when **Apply this profile** is on, or when a CSV row sets the same field for that device.
+Profiles are off until you opt in. Security choices from the config flow (cloud, access point, Bluetooth RPC, timezone, device login password, scanner mode) are applied on adoption because you set them there. The login password is applied only when the device has no login. Input, output, and dimmer sections are applied only when **Apply this profile** is on, or when a CSV row sets the same field for that device.
 
 Open **Configure** and edit one section at a time.
 
 ### Security
 
-- **Device password.** `Shelly.SetAuth` with user `admin`, realm set to the device id, and HA1 `SHA-256("admin:<device id>:<password>")`. The password is not logged. If the device already has authentication, Shelly Bulk does not replace it.
+- **Device login password (admin).** `Shelly.SetAuth` with username `admin`, realm set to the device id, and HA1 `SHA-256("admin:<device id>:<password>")`. The password is not logged. It is sent only when the device has no login. A device that already has a password is not changed, and Home Assistant keeps the password already stored on that Shelly entry. See [Device login (auth)](#device-login-auth).
 - **Cloud.** `Cloud.SetConfig` with `enable: false` when disable-cloud is on. Unchecking it leaves the cloud setting as the device has it.
 - **Access point.** Core Shelly turns the AP off after Bluetooth provisioning. Shelly Bulk sends your choice afterwards, so unchecking the box turns the AP back on.
 - **Bluetooth RPC.** Same pattern. `BLE.SetConfig` keeps Bluetooth **enabled** (`enable: true`) so the scanner still works, and sets `rpc.enable` from your checkbox.
-- **Name and timezone.** `Sys.SetConfig` `device.name` from the allowlist, and `location.tz` from the timezone you entered.
+- **Name and timezone.** `Sys.SetConfig` `device.name` from the allowlist. `location.tz` is sent only when a timezone is stored. The format is an IANA name such as `Australia/Melbourne` (see the [TZ identifier list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)). An empty timezone omits `location.tz`, so the device clock zone is left as it is.
 - **Scanner.** Core Shelly option `ble_scanner_mode`, set to active, auto, passive, or disabled.
 
 ### Inputs
@@ -179,6 +264,72 @@ On light-like channels, when the dimmer profile is on:
 - **Button dimming** → `in_mode` `dim` (one button: short press toggles, hold dims) or `dual_dim`.
 
 `apply_profile` runs the same plan against Shellies that are already in Home Assistant. Target a device, an area, a MAC, a model substring, or every Shelly entry.
+
+## Securing devices
+
+The secure profile is a checklist, not a silent change. Set the device login password under **Configure → Security and timezone** or **Configure → Secure profile**. Typing a password there only stores it. It does not re-key devices. Leave the box blank to keep the stored password. Then run **Secure devices**, or call `shelly_bulk.secure_devices`. You can secure one device, an area, or every core Shelly.
+
+Shelly Bulk applies the calls and reads each setting back. `Shelly.SetAuth` runs only for a device that has no login, and only when that checklist item is on. The username written to the device and to the core Shelly entry is `admin`. Devices that already have a password are left unchanged, and Home Assistant keeps the password already stored for them. The password and the HA1 digest are not written to logs, diagnostics, or the audit.
+
+| Checklist item | RPC | Default |
+| --- | --- | --- |
+| Set the device login when a device has none | `Shelly.SetAuth` (username `admin`, realm = device id, HA1 = SHA-256 of `admin:id:password`). Skipped when the device already has a login | On |
+| Disable Shelly Cloud | `Cloud.SetConfig` `enable: false` | On |
+| Disable the Wi-Fi access point | `WiFi.SetConfig` `ap.enable: false` | On |
+| Disable Bluetooth RPC, keep Bluetooth | `BLE.SetConfig` `enable: true`, `rpc.enable: false` | On |
+| Disable MQTT | `MQTT.SetConfig` `enable: false` | Off. Skipped when the device has no MQTT component |
+| Disable outbound websocket | `Ws.SetConfig` `enable: false` | Off |
+| Disable debug and UDP logging | `Sys.SetConfig` `debug.*` off and `rpc_udp.listen_port: null` | On |
+| Keep firmware updates manual | Does not call `Shelly.Update`. Gen2+ has no documented auto-update switch; cloud push stops when cloud is off | Off |
+| Restrict the web UI | `Sys.SetConfig` `device.discoverable: false`. The page itself asks for the device login when a password is set | Off |
+
+`audit_security` only reads. The **Security audit** sensor shows `passed/total` (or `not_audited` before the first audit). Each device row includes `auth_on`. `false` means that Shelly has no login. The other fields are cloud off, access point off, Bluetooth RPC off, and firmware version.
+
+```yaml
+action: shelly_bulk.secure_devices
+data:
+  mac: "00:00:00:00:00:01"
+  disable_mqtt: true
+  restrict_web_ui: true
+```
+
+```yaml
+action: shelly_bulk.audit_security
+data:
+  all_shelly: true
+```
+
+## Change a device's settings later
+
+**Configure → Edit a device** lists every Shelly already added by Home Assistant. Each row shows the name, room, model, and MAC. The next form is filled from that device over RPC, and it only includes settings the device's own config reports: name, room, input type and behaviour (switch, button, follow, flip, momentary, detached, activate, and dim modes when the device has them), invert, power-on state, auto-on and auto-off with their delays, and, on a dimmer, fade rate, transition, minimum and maximum brightness, and night mode.
+
+Saving writes those values, reads them back, and marks any field the device did not keep. The Home Assistant device name and area are updated, and the same name, room, input, power-on state, fade rate, and transition are written into `shelly_bulk/devices.csv`.
+
+The following screen can copy the channel settings onto other devices. Type a model name to filter the list. Leave it empty to stop after the one device. The name and room are not copied.
+
+On each adopted Shelly's device page, **Input behaviour**, **Power-on state**, and **Auto off delay** are enabled. A dimmer also has **Fade rate** and **Transition**. Changing one writes it to the device and shows the value the device read back, so the same controls work on a dashboard. The advanced switches (cloud, Bluetooth, MQTT, and the rest) stay disabled until you enable them.
+
+## Advanced settings
+
+Each core Shelly gets config switches and selects: Bluetooth, Bluetooth RPC, scanner mode, cloud, access point, MQTT, eco mode, status LED, debug logging, input behaviour, and power-on state. They are **disabled by default** so a large install does not poll every device. Enable the ones you want on the device page. Changing one reads the new value back from the device.
+
+Scanner mode is the core Shelly option `ble_scanner_mode` (`active`, `auto`, `passive`, `disabled`). The others are Gen2+ RPC. A model without that component is left unchanged and the result says so.
+
+`set_advanced` is the bulk form of the same settings, plus input type, auto-on and auto-off timers, dimmer fade rate, transition time, and the Shelly device name.
+
+```yaml
+action: shelly_bulk.set_advanced
+data:
+  mac: "00:00:00:00:00:01"
+  channel: 0
+  input_mode: detached
+  power_on_state: restore_last
+  auto_off: true
+  auto_off_delay: 120
+  fade_rate: 2
+  cloud: false
+  scanner_mode: active
+```
 
 ## Services
 
@@ -305,7 +456,7 @@ A device that is advertising with Bluetooth RPC off raises **Shelly setup window
 | `cannot_connect` | Nothing that can open GATT heard the device. A Shelly scanner is not enough on its own. Move a connectable proxy closer. |
 | Timed out waiting for Wi-Fi | Wrong SSID or password, 5 GHz or WPA3-only SSID, no DHCP, or mDNS not reaching Home Assistant. |
 | `skipped_auth` | The device already has a password, or the advertisement says authentication is on. Shelly Bulk did not send credentials and did not change it. Factory-reset if you meant to adopt it. |
-| Adopted, then core Shelly wants a reauth | The device password was set. Reload the Shelly entry; Shelly Bulk writes the password onto that entry after `Shelly.SetAuth`. If the device rebooted mid-write, enter the device password in the Shelly reauth form. |
+| Adopted, then core Shelly wants a reauth | The device login was set. Shelly Bulk writes `admin` and that password onto the Shelly entry after `Shelly.SetAuth`. If the device rebooted mid-write, enter that same password in the Shelly reauth form. |
 | Dimmer fade "skipped" | That model has no `button_fade_rate` or `transition_duration`. The note in the report names the field. |
 | Power-on brightness not sent | The component config has no brightness field Shelly Bulk is willing to guess. |
 | Many identical devices, the wrong one joined | Use the allowlist. Shelly Bulk will not adopt a MAC that is not on it while that option is on. |
@@ -323,7 +474,10 @@ No. Devices are added by core Shelly. Shelly Bulk only answers the Bluetooth flo
 They help you *hear* the next ones. They do not connect to them. Keep a connectable adapter or ESPHome proxy in the chain.
 
 **Can I adopt a device that already has a password?**
-Not automatically. Shelly Bulk will not try the device password against a locked device. Add it yourself in core Shelly, then use **Apply profile** if that Shelly entry already has the right password stored. Apply profile still will not replace an existing device password.
+Not automatically. Shelly Bulk will not try the device login password against a locked device. Add it yourself in core Shelly. Apply profile and Secure devices still will not replace an existing device password. Home Assistant keeps using the password already stored on that Shelly entry.
+
+**Does changing the device login password in Configure update devices that already have one?**
+No. Configure only stores the new password on the Shelly Bulk entry. It is used the next time a device with no login is adopted, or when you run Secure devices or Apply profile against a device that still has no login.
 
 **Where do the secrets live?**
 On the Shelly Bulk config entry in Home Assistant's `.storage`, the same way other integrations store passwords. They are masked in diagnostics and in this integration's logs. Do not put them in the CSV. Do not commit a CSV.
@@ -355,9 +509,9 @@ pip install -r requirements_test.txt
 pytest
 ```
 
-GitHub Actions runs hassfest, HACS validation, and pytest. Tests use Home Assistant's config-flow harness and a fake RPC session. They do not talk to hardware. If you change an RPC field, cite the Shelly component doc you checked (`https://shelly-api-docs.shelly.cloud/gen2/`) and say when a model refused it.
+GitHub Actions runs hassfest, HACS validation, and pytest. Tests use Home Assistant's config-flow harness and a fake RPC session. They do not talk to hardware. If you change an RPC field, cite the Shelly component doc you checked (`https://shelly-api-docs.shelly.cloud/gen2/`) and say when a model refused it. Bump `manifest.json`, the **Current version** line at the top of this README, and add a `CHANGELOG.md` section with the same version. The release workflow on `main` turns that section into the GitHub release HACS lists.
 
-Please don't add site defaults "to make the form easier". The config flow is supposed to be empty of SSID, password, timezone, and devices.
+Please don't add site defaults "to make the form easier". The config flow is supposed to be empty of SSID, password, and devices. Timezone may be suggested from the running Home Assistant instance. Examples such as `Australia/Melbourne` in the docs are format samples, not a default.
 
 ## Licence and credits
 

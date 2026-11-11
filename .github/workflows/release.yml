@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read manifest version
+        id: version
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("custom_components/shelly_bulk/manifest.json"))["version"])')
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Check for an existing tag
+        id: tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${TAG} already exists"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Tag ${TAG} will be created"
+          fi
+
+      - name: Extract changelog section
+        if: steps.tag.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 - << 'PY'
+          import os
+          import pathlib
+          import re
+          import sys
+
+          version = os.environ["VERSION"]
+          changelog = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          match = re.search(rf"^## {re.escape(version)}\s*$", changelog, re.MULTILINE)
+          if match is None:
+              sys.exit(f"CHANGELOG.md has no section for {version}")
+          rest = changelog[match.end() :]
+          next_heading = re.search(r"^## ", rest, re.MULTILINE)
+          body = (rest[: next_heading.start()] if next_heading else rest).strip()
+          if not body:
+              sys.exit(f"CHANGELOG.md section {version} is empty")
+          pathlib.Path("release-notes.md").write_text(body + "\n", encoding="utf-8")
+          PY
+
+      - name: Create tag and GitHub release
+        if: steps.tag.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file release-notes.md \
+            --target "$GITHUB_SHA"

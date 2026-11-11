@@ -148,13 +148,202 @@ export_report:
             - json
             - both
 
+secure_devices:
+  fields:
+    device_id:
+      selector:
+        device:
+          integration: shelly
+          multiple: true
+    area_id:
+      selector:
+        area:
+          multiple: true
+    site:
+      selector:
+        text:
+    mac:
+      selector:
+        text:
+    all_shelly:
+      selector:
+        boolean:
+    rotate_password:
+      selector:
+        boolean:
+    disable_cloud:
+      selector:
+        boolean:
+    disable_ap:
+      selector:
+        boolean:
+    disable_ble_rpc:
+      selector:
+        boolean:
+    disable_mqtt:
+      selector:
+        boolean:
+    disable_ws:
+      selector:
+        boolean:
+    disable_debug:
+      selector:
+        boolean:
+    firmware_manual:
+      selector:
+        boolean:
+    restrict_web_ui:
+      selector:
+        boolean:
+
+audit_security:
+  fields:
+    device_id:
+      selector:
+        device:
+          integration: shelly
+          multiple: true
+    area_id:
+      selector:
+        area:
+          multiple: true
+    site:
+      selector:
+        text:
+    mac:
+      selector:
+        text:
+    all_shelly:
+      selector:
+        boolean:
+
+set_advanced:
+  fields:
+    device_id:
+      selector:
+        device:
+          integration: shelly
+          multiple: true
+    area_id:
+      selector:
+        area:
+          multiple: true
+    site:
+      selector:
+        text:
+    mac:
+      selector:
+        text:
+    all_shelly:
+      selector:
+        boolean:
+    channel:
+      selector:
+        number:
+          min: 0
+          max: 7
+          mode: box
+    bluetooth:
+      selector:
+        boolean:
+    ble_rpc:
+      selector:
+        boolean:
+    scanner_mode:
+      selector:
+        select:
+          options:
+            - active
+            - auto
+            - passive
+            - disabled
+    cloud:
+      selector:
+        boolean:
+    access_point:
+      selector:
+        boolean:
+    mqtt:
+      selector:
+        boolean:
+    eco_mode:
+      selector:
+        boolean:
+    status_led:
+      selector:
+        boolean:
+    debug_logging:
+      selector:
+        boolean:
+    input_type:
+      selector:
+        select:
+          options:
+            - switch
+            - button
+    input_mode:
+      selector:
+        select:
+          options:
+            - follow
+            - flip
+            - momentary
+            - detached
+            - activate
+            - dim
+            - dual_dim
+            - cycle
+    power_on_state:
+      selector:
+        select:
+          options:
+            - "off"
+            - "on"
+            - restore_last
+            - match_input
+            - toggle
+    auto_on:
+      selector:
+        boolean:
+    auto_off:
+      selector:
+        boolean:
+    auto_on_delay:
+      selector:
+        number:
+          min: 0
+          max: 86400
+          mode: box
+    auto_off_delay:
+      selector:
+        number:
+          min: 0
+          max: 86400
+          mode: box
+    fade_rate:
+      selector:
+        number:
+          min: 1
+          max: 5
+          mode: box
+    transition_duration:
+      selector:
+        number:
+          min: 0
+          max: 10800
+          step: 0.5
+          mode: box
+    device_name:
+      selector:
+        text:
+
 import_allowlist:
   fields:
     site:
       selector:
         text:
     filename:
-      required: true
+      default: "shelly_bulk/devices.csv"
       selector:
         text:
     replace:

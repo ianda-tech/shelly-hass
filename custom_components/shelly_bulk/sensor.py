@@ -24,6 +24,7 @@ async def async_setup_entry(
             PendingSensor(runtime),
             FailedSensor(runtime),
             LastErrorSensor(runtime),
+            SecurityAuditSensor(runtime),
         ]
     )
 
@@ -69,3 +70,39 @@ class LastErrorSensor(FleetEntity, SensorEntity):
     @property
     def native_value(self) -> str:
         return self.runtime.last_error or "none"
+
+
+class SecurityAuditSensor(FleetEntity, SensorEntity):
+    """Latest security checklist across the audited Shelly devices."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "security_audit"
+
+    def __init__(self, runtime: FleetRuntime) -> None:
+        super().__init__(runtime, "security_audit")
+
+    @property
+    def native_value(self) -> str:
+        rows = self.runtime.last_audit
+        if not rows:
+            return "not_audited"
+        passed = sum(1 for row in rows if row.get("ok"))
+        return f"{passed}/{len(rows)}"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        devices = []
+        for row in self.runtime.last_audit:
+            devices.append(
+                {
+                    "mac": row.get("mac"),
+                    "firmware": row.get("firmware"),
+                    "auth_on": row.get("auth_on"),
+                    "cloud_off": row.get("cloud_off"),
+                    "ap_off": row.get("ap_off"),
+                    "ble_rpc_off": row.get("ble_rpc_off"),
+                    "ok": row.get("ok"),
+                    "issues": row.get("issues") or [],
+                }
+            )
+        return {"devices": devices}

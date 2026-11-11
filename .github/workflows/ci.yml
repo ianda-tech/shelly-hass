@@ -37,5 +37,19 @@ jobs:
           python-version: "3.13"
       - name: Install test dependencies
         run: pip install -r requirements_test.txt
+      - name: English translations match strings.json
+        run: diff -q custom_components/shelly_bulk/strings.json custom_components/shelly_bulk/translations/en.json
+      - name: README version matches manifest
+        run: |
+          python3 << 'PY'
+          import json
+          import pathlib
+          import sys
+          version = json.loads(pathlib.Path("custom_components/shelly_bulk/manifest.json").read_text())["version"]
+          needle = "Current version: " + version
+          readme = pathlib.Path("README.md").read_text(encoding="utf-8")
+          if needle not in readme:
+              sys.exit("README.md must contain " + needle)
+          PY
       - name: Run tests
         run: pytest

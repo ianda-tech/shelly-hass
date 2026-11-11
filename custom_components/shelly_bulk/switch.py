@@ -7,8 +7,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_PROVISIONING_MINUTES, DOMAIN
-from .entity import FleetEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.exceptions import HomeAssistantError
+
+from .advanced import SWITCH_SETTINGS
+from .const import CONF_PROVISIONING_MINUTES, DOMAIN, SHELLY_DOMAIN
+from .entity import FleetEntity, shelly_device_info
 from .runtime import FleetRuntime
 
 
@@ -18,7 +22,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     runtime: FleetRuntime = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([ProvisioningSwitch(runtime)])
+    entities: list[SwitchEntity] = [ProvisioningSwitch(runtime), AutoAdoptSwitch(runtime)]
+    for shelly_entry in hass.config_entries.async_entries(SHELLY_DOMAIN):
+        entities.extend(advanced_switches(runtime, shelly_entry))
+    async_add_entities(entities)
+
+
+def advanced_switches(runtime: FleetRuntime, shelly_entry: ConfigEntry) -> list[SwitchEntity]:
+    return [AdvancedSwitch(runtime, shelly_entry, key) for key in SWITCH_SETTINGS]
 
 
 class ProvisioningSwitch(FleetEntity, SwitchEntity):
@@ -45,4 +56,100 @@ class ProvisioningSwitch(FleetEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         await self.runtime.stop_provisioning()
+        self.async_write_ha_state()
+
+
+class AutoAdoptSwitch(FleetEntity, SwitchEntity):
+    """Adopt factory-new Shellies that are not on the device list.
+
+    Only provision the allowlist overrides this switch while that option is on.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "auto_adopt"
+
+    def __init__(self, runtime: FleetRuntime) -> None:
+        super().__init__(runtime, "auto_adopt")
+
+    @property
+    def is_on(self) -> bool:
+        return self.runtime.auto_adopt
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        if self.runtime.auto_adopt and self.runtime.require_allowlist:
+            return {
+                "status": (
+                    "Paused. Only provision the allowlist is on, so devices that "
+                    "are not on the list are left alone."
+                )
+            }
+        if self.runtime.effective_auto_adopt:
+            return {
+                "status": (
+                    "On. A factory-new Shelly in range can be adopted, including a neighbour's."
+                )
+            }
+        return {"status": "Off. Find my Shelly only adds devices to the list."}
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self.runtime.set_auto_adopt(True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self.runtime.set_auto_adopt(False)
+        self.async_write_ha_state()
+
+
+class AdvancedSwitch(SwitchEntity):
+    """One documented on/off setting for a single Shelly. Disabled until enabled."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_entity_registry_enabled_default = False
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+
+    def __init__(self, runtime: FleetRuntime, shelly_entry: ConfigEntry, key: str) -> None:
+        self.runtime = runtime
+        self._shelly_entry = shelly_entry
+        self._key = key
+        self._attr_unique_id = f"{shelly_entry.entry_id}_{key}"
+        self._attr_translation_key = key
+        self._attr_device_info = shelly_device_info(runtime.hass, shelly_entry)
+        self._available = True
+        self._is_on = False
+
+    @property
+    def available(self) -> bool:
+        return self._available
+
+    @property
+    def is_on(self) -> bool:
+        return self._is_on
+
+    async def async_added_to_hass(self) -> None:
+        await self._refresh()
+
+    async def _refresh(self) -> None:
+        try:
+            value = await self.runtime.read_device_setting(self._shelly_entry, self._key)
+        except Exception:  # noqa: BLE001
+            self._available = False
+            return
+        self._available = value is not None
+        self._is_on = bool(value)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self._write(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._write(False)
+
+    async def _write(self, value: bool) -> None:
+        try:
+            read_back = await self.runtime.write_device_setting(self._shelly_entry, self._key, value)
+        except Exception as err:  # noqa: BLE001
+            raise HomeAssistantError(str(err)) from err
+        self._available = read_back is not None
+        self._is_on = bool(read_back)
         self.async_write_ha_state()

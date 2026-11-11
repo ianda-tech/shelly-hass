@@ -26,11 +26,14 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from .device_settings import CHANNEL_KEYS, channel_updates
+from .security import SECURE_OPTION_DEFAULTS
 from .const import (
     BLE_SCANNER_MODES,
     CONF_APPLY_DIMMER_PROFILE,
     CONF_APPLY_INPUT_PROFILE,
     CONF_APPLY_OUTPUT_PROFILE,
+    CONF_AUTO_ADOPT,
     CONF_AUTO_OFF,
     CONF_AUTO_OFF_DELAY,
     CONF_AUTO_ON,
@@ -65,10 +68,12 @@ from .const import (
     CONF_UPDATE_FIRMWARE,
     CONF_WIFI_PASSWORD,
     CONF_WIFI_SSID,
+    DEVICE_LIST_RELATIVE,
     DOMAIN,
+    OPTIONS_MENU,
     UNCHANGED,
 )
-from .util import as_int, slugify, valid_hhmm
+from .util import as_int, normalize_mac, slugify, valid_hhmm
 
 _PASSWORD = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
@@ -94,6 +99,7 @@ _BEHAVIOUR_SCHEMA = vol.Schema(
         vol.Required(CONF_DISABLE_AP, default=True): BooleanSelector(),
         vol.Required(CONF_DISABLE_BLE_RPC, default=True): BooleanSelector(),
         vol.Required(CONF_UPDATE_FIRMWARE, default=False): BooleanSelector(),
+        vol.Required(CONF_AUTO_ADOPT, default=True): BooleanSelector(),
         vol.Required(CONF_REQUIRE_ALLOWLIST, default=True): BooleanSelector(),
         vol.Required(CONF_BLE_SCANNER_MODE, default="active"): _choice(
             [
@@ -119,6 +125,7 @@ def _behaviour_options(user_input: dict[str, Any]) -> dict[str, Any]:
         CONF_DISABLE_AP: bool(user_input[CONF_DISABLE_AP]),
         CONF_DISABLE_BLE_RPC: bool(user_input[CONF_DISABLE_BLE_RPC]),
         CONF_UPDATE_FIRMWARE: bool(user_input[CONF_UPDATE_FIRMWARE]),
+        CONF_AUTO_ADOPT: bool(user_input.get(CONF_AUTO_ADOPT, True)),
         CONF_REQUIRE_ALLOWLIST: bool(user_input[CONF_REQUIRE_ALLOWLIST]),
         CONF_BLE_SCANNER_MODE: mode,
         CONF_CONCURRENCY: int(user_input[CONF_CONCURRENCY]),
@@ -140,7 +147,7 @@ class ShellyBulkConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             timezone = str(user_input.get(CONF_TIMEZONE) or "").strip()
-            if not _valid_timezone(timezone):
+            if timezone and not _valid_timezone(timezone):
                 errors[CONF_TIMEZONE] = "invalid_timezone"
             else:
                 user_input[CONF_TIMEZONE] = timezone
@@ -150,14 +157,17 @@ class ShellyBulkConfigFlow(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_behaviour()
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_SITE_NAME): TextSelector(),
-                    vol.Required(CONF_WIFI_SSID): TextSelector(),
-                    vol.Required(CONF_WIFI_PASSWORD): _PASSWORD,
-                    vol.Optional(CONF_FLEET_PASSWORD, default=""): _PASSWORD,
-                    vol.Required(CONF_TIMEZONE): TextSelector(),
-                }
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required(CONF_SITE_NAME): TextSelector(),
+                        vol.Required(CONF_WIFI_SSID): TextSelector(),
+                        vol.Required(CONF_WIFI_PASSWORD): _PASSWORD,
+                        vol.Optional(CONF_FLEET_PASSWORD, default=""): _PASSWORD,
+                        vol.Optional(CONF_TIMEZONE): TextSelector(),
+                    }
+                ),
+                {CONF_TIMEZONE: self.hass.config.time_zone or ""},
             ),
             errors=errors,
             description_placeholders={
@@ -192,7 +202,7 @@ class ShellyBulkOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["wifi", "security", "inputs", "outputs", "dimmers", "provisioning", "allowlist"],
+            menu_options=list(OPTIONS_MENU),
         )
 
     async def async_step_wifi(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -227,6 +237,8 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                     errors[CONF_TIMEZONE] = "invalid_timezone"
                 else:
                     data[CONF_TIMEZONE] = timezone
+            elif user_input.get("clear_timezone"):
+                data[CONF_TIMEZONE] = ""
             if str(user_input.get(CONF_FLEET_PASSWORD) or ""):
                 data[CONF_FLEET_PASSWORD] = str(user_input[CONF_FLEET_PASSWORD])
             if not errors:
@@ -243,6 +255,7 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                     {
                         vol.Optional(CONF_FLEET_PASSWORD, default=""): _PASSWORD,
                         vol.Optional(CONF_TIMEZONE, default=""): TextSelector(),
+                        vol.Required("clear_timezone", default=False): BooleanSelector(),
                         vol.Required(CONF_DISABLE_CLOUD, default=True): BooleanSelector(),
                         vol.Required(CONF_DISABLE_AP, default=True): BooleanSelector(),
                         vol.Required(CONF_DISABLE_BLE_RPC, default=True): BooleanSelector(),
@@ -422,6 +435,7 @@ class ShellyBulkOptionsFlow(OptionsFlow):
         if user_input is not None:
             updated = dict(options)
             updated[CONF_UPDATE_FIRMWARE] = bool(user_input[CONF_UPDATE_FIRMWARE])
+            updated[CONF_AUTO_ADOPT] = bool(user_input[CONF_AUTO_ADOPT])
             updated[CONF_REQUIRE_ALLOWLIST] = bool(user_input[CONF_REQUIRE_ALLOWLIST])
             mode = user_input[CONF_BLE_SCANNER_MODE]
             updated[CONF_BLE_SCANNER_MODE] = mode if mode in BLE_SCANNER_MODES else "active"
@@ -435,6 +449,9 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_UPDATE_FIRMWARE, default=bool(options.get(CONF_UPDATE_FIRMWARE, False))
+                    ): BooleanSelector(),
+                    vol.Required(
+                        CONF_AUTO_ADOPT, default=bool(options.get(CONF_AUTO_ADOPT, True))
                     ): BooleanSelector(),
                     vol.Required(
                         CONF_REQUIRE_ALLOWLIST, default=bool(options.get(CONF_REQUIRE_ALLOWLIST, True))
@@ -457,6 +474,25 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                 }
             ),
         )
+
+    async def async_step_secure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Store the secure-profile checklist. The password field updates entry data."""
+        if user_input is not None:
+            data = dict(self.config_entry.data)
+            if str(user_input.get(CONF_FLEET_PASSWORD) or ""):
+                data[CONF_FLEET_PASSWORD] = str(user_input[CONF_FLEET_PASSWORD])
+                self.hass.config_entries.async_update_entry(self.config_entry, data=data)
+            options = dict(self.config_entry.options)
+            for key in SECURE_OPTION_DEFAULTS:
+                options[key] = bool(user_input.get(key, SECURE_OPTION_DEFAULTS[key]))
+            return self.async_create_entry(data=options)
+        options = self.config_entry.options
+        schema: dict[Any, Any] = {
+            vol.Optional(CONF_FLEET_PASSWORD, default=""): _PASSWORD,
+        }
+        for key, default in SECURE_OPTION_DEFAULTS.items():
+            schema[vol.Required(key, default=bool(options.get(key, default)))] = BooleanSelector()
+        return self.async_show_form(step_id="secure", data_schema=vol.Schema(schema))
 
     async def async_step_allowlist(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
@@ -481,14 +517,210 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                 )
         return self.async_show_form(
             step_id="allowlist",
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required("filename", default=DEVICE_LIST_RELATIVE): TextSelector(),
+                        vol.Required("replace", default=True): BooleanSelector(),
+                    }
+                ),
+                {"filename": DEVICE_LIST_RELATIVE},
+            ),
+            errors=errors,
+        )
+
+    async def async_step_add_device(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Append one MAC to the device list without rewriting existing rows."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            runtime = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+            if runtime is None:
+                return self.async_abort(reason="not_loaded")
+            try:
+                mac = normalize_mac(str(user_input.get("mac") or ""))
+            except ValueError:
+                errors["mac"] = "invalid_mac"
+            else:
+                added = await runtime.add_listed_device(
+                    mac, str(user_input.get("name") or ""), str(user_input.get("room") or "")
+                )
+                if not added:
+                    errors["mac"] = "already_listed"
+                else:
+                    return self.async_create_entry(data=dict(self.config_entry.options))
+        return self.async_show_form(
+            step_id="add_device",
             data_schema=vol.Schema(
                 {
-                    vol.Required("filename"): TextSelector(),
-                    vol.Required("replace", default=True): BooleanSelector(),
+                    vol.Required("mac"): TextSelector(),
+                    vol.Optional("name", default=""): TextSelector(),
+                    vol.Optional("room", default=""): TextSelector(),
                 }
             ),
             errors=errors,
         )
+
+    def _fleet(self):
+        return self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+
+    async def async_step_edit_device(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Choose an adopted Shelly, then load its live settings."""
+        runtime = self._fleet()
+        if runtime is None:
+            return self.async_abort(reason="not_loaded")
+        choices = runtime.adopted_device_choices()
+        if not choices:
+            return self.async_abort(reason="no_devices")
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._edit_id = str(user_input["device"])
+            try:
+                live = await runtime.read_device_form(self._edit_id)
+            except Exception:  # noqa: BLE001
+                errors["base"] = "not_reachable"
+            else:
+                picked = next(item for item in choices if item["id"] == self._edit_id)
+                self._edit_supported = live.supported
+                self._edit_values = dict(live.values)
+                self._edit_values["room"] = picked["room"]
+                return await self.async_step_edit_fields()
+        return self.async_show_form(
+            step_id="edit_device",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("device"): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[{"value": item["id"], "label": item["label"]} for item in choices],
+                            mode=SelectSelectorMode.DROPDOWN,
+                            sort=True,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_edit_fields(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show the fields this model supports, pre-filled from the device."""
+        runtime = self._fleet()
+        if runtime is None:
+            return self.async_abort(reason="not_loaded")
+        errors: dict[str, str] = {}
+        details = "none"
+        allowed = set(self._edit_supported) | {"room"}
+        if user_input is not None:
+            values = {key: user_input[key] for key in user_input if key in allowed}
+            try:
+                field_errors = await runtime.save_device_form(self._edit_id, values)
+            except Exception:  # noqa: BLE001
+                errors["base"] = "not_reachable"
+            else:
+                self._edit_values.update(values)
+                if field_errors:
+                    errors = field_errors
+                    details = ", ".join(sorted(field_errors))
+                else:
+                    self._saved_channel = channel_updates(values)
+                    return await self.async_step_copy_settings()
+        return self.async_show_form(
+            step_id="edit_fields",
+            data_schema=self.add_suggested_values_to_schema(
+                _edit_schema(self._edit_supported, self._edit_values),
+                self._edit_values,
+            ),
+            errors=errors,
+            description_placeholders={"details": details},
+        )
+
+    async def async_step_copy_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Optionally apply the channel settings to other devices. Leave the list empty to skip."""
+        runtime = self._fleet()
+        if runtime is None:
+            return self.async_abort(reason="not_loaded")
+        choices = [item for item in runtime.adopted_device_choices() if item["id"] != self._edit_id]
+        errors: dict[str, str] = {}
+        details = "none"
+        if user_input is not None:
+            targets = [str(item) for item in (user_input.get("targets") or []) if str(item) != "_none"]
+            if not targets:
+                return self.async_create_entry(data=dict(self.config_entry.options))
+            problems = await runtime.copy_channel_settings(targets, self._saved_channel)
+            if not problems:
+                return self.async_create_entry(data=dict(self.config_entry.options))
+            errors["base"] = "not_applied"
+            details = "; ".join(f"{entry_id}: {message}" for entry_id, message in problems.items())
+        return self.async_show_form(
+            step_id="copy_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional("targets", default=[]): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[{"value": item["id"], "label": item["label"]} for item in choices] or [{"value": "_none", "label": "No other devices"}],
+                            multiple=True,
+                            mode=SelectSelectorMode.DROPDOWN,
+                            sort=True,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={"details": details},
+        )
+
+
+_EDIT_NUMBERS = {
+    "auto_on_delay": (0, 86400, 0.5),
+    "auto_off_delay": (0, 86400, 0.5),
+    "fade_rate": (1, 5, 1),
+    "transition_duration": (0, 10800, 0.5),
+    "transition_up": (0, 10800, 0.5),
+    "transition_down": (0, 10800, 0.5),
+    "min_brightness": (0, 100, 1),
+    "max_brightness": (0, 100, 1),
+    "night_brightness": (1, 100, 1),
+}
+_EDIT_CHOICES = {
+    "input_type": [("switch", "Switch"), ("button", "Button")],
+    "input_mode": [
+        ("follow", "Follow"),
+        ("flip", "Toggle / flip"),
+        ("momentary", "Momentary"),
+        ("detached", "Detached"),
+        ("activate", "Activation"),
+        ("dim", "Dim"),
+        ("dual_dim", "Dual dim"),
+    ],
+    "initial_state": [
+        ("off", "Off"),
+        ("on", "On"),
+        ("restore_last", "Restore last"),
+        ("match_input", "Match input"),
+        ("toggle", "Toggle"),
+    ],
+}
+
+
+def _edit_schema(supported: tuple[str, ...] | list[str], values: dict[str, Any]) -> vol.Schema:
+    """Build a form that contains only the fields this device returned."""
+    shown = [key for key in ("name", "room", *CHANNEL_KEYS) if key == "room" or key in supported]
+    schema: dict[Any, Any] = {}
+    for key in shown:
+        current = values.get(key)
+        if key in {"invert", "auto_on", "auto_off", "night_mode"}:
+            schema[vol.Required(key, default=bool(current))] = BooleanSelector()
+        elif key in _EDIT_NUMBERS:
+            low, high, step = _EDIT_NUMBERS[key]
+            default = current if current not in (None, "") else low
+            schema[vol.Required(key, default=default)] = _number(low, high, step)
+        elif key in _EDIT_CHOICES:
+            options = list(_EDIT_CHOICES[key])
+            known = {item[0] for item in options}
+            if current and str(current) not in known:
+                options.append((str(current), str(current)))
+            schema[vol.Required(key, default=str(current or options[0][0]))] = _choice(options)
+        else:
+            schema[vol.Optional(key, default=str(current or ""))] = TextSelector()
+    return vol.Schema(schema)
 
 
 def _valid_timezone(value: str) -> bool:
