@@ -74,6 +74,23 @@ from .util import display_mac, normalize_mac
 _LOGGER = logging.getLogger(__name__)
 
 
+def update_entry_if_changed(hass: HomeAssistant, entry: ConfigEntry, *, data: dict | None = None, options: dict | None = None) -> bool:
+    """Write a config entry only when data or options actually change.
+
+    The Shelly Bulk update listener reloads the entry. Writing the same
+    scanner mode or password again would reload forever.
+    """
+    kwargs: dict[str, Any] = {}
+    if data is not None and dict(data) != dict(entry.data):
+        kwargs["data"] = data
+    if options is not None and dict(options) != dict(entry.options):
+        kwargs["options"] = options
+    if not kwargs:
+        return False
+    hass.config_entries.async_update_entry(entry, **kwargs)
+    return True
+
+
 class FleetRuntime:
     """Holds the allowlist, adoption stats, and the provisioning loop."""
 
@@ -94,6 +111,9 @@ class FleetRuntime:
         self._list_mtime: float | None = None
         self._list_unsub = None
         self._network: dict[str, dict[str, Any]] = {}
+        # Entity setup used to open one RPC session per control at the same time.
+        # A Shelly reboots when that many sessions arrive together.
+        self._rpc_limit = asyncio.Semaphore(3)
         _LOGGER.addFilter(self._log_filter)
 
     @property
@@ -1068,13 +1088,10 @@ class FleetRuntime:
             notes.extend(plan_notes)
             restart = await async_execute_calls(session, calls, notes, self.redact)
             if restart:
-                await session.call("Shelly.Reboot", {"delay_ms": 1500})
-                notes.append("Reboot requested by the device")
-                await session.shutdown()
-                session = None
-                await asyncio.sleep(4)
-                session = await self._connect_with_retries(host, port, username, password, verify_ssl)
-                shelly = dict(session.shelly)
+                notes.append(
+                    "The device asked to restart after a setting change. "
+                    "Shelly Bulk does not reboot it."
+                )
 
             firmware = str(shelly.get("ver") or "")
             if self.entry.options.get(CONF_UPDATE_FIRMWARE) and include_security:
@@ -1165,7 +1182,7 @@ class FleetRuntime:
         if new_password:
             data[CONF_USERNAME] = "admin"
             data[CONF_PASSWORD] = new_password
-        self.hass.config_entries.async_update_entry(entry, data=data, options=options)
+        update_entry_if_changed(self.hass, entry, data=data, options=options)
 
     async def _assign_name_area(self, entry: ConfigEntry, name: str, room: str) -> str:
         if not name and not room:
@@ -1306,7 +1323,7 @@ class FleetRuntime:
                 raise ServiceValidationError(f"Scanner mode must be one of {', '.join(BLE_SCANNER_MODES)}")
             options = dict(entry.options)
             options[CONF_BLE_SCANNER_MODE] = mode
-            self.hass.config_entries.async_update_entry(entry, options=options)
+            update_entry_if_changed(self.hass, entry, options=options)
             updated = self.hass.config_entries.async_get_entry(entry.entry_id) or entry
             return str(updated.options.get(CONF_BLE_SCANNER_MODE) or mode)
         session = await self._open_shelly(entry)
@@ -1328,14 +1345,29 @@ class FleetRuntime:
         password = entry.data.get(CONF_PASSWORD) or None
         if username and not password:
             username = None
-        return await self._connect_with_retries(
-            host,
-            int(entry.data.get(CONF_PORT) or 80),
-            username,
-            password,
-            bool(entry.data.get(CONF_VERIFY_SSL, False)),
-            attempts,
-        )
+        await self._rpc_limit.acquire()
+        try:
+            session = await self._connect_with_retries(
+                host,
+                int(entry.data.get(CONF_PORT) or 80),
+                username,
+                password,
+                bool(entry.data.get(CONF_VERIFY_SSL, False)),
+                attempts,
+            )
+        except Exception:
+            self._rpc_limit.release()
+            raise
+        raw_shutdown = session.shutdown
+
+        async def _shutdown() -> None:
+            try:
+                await raw_shutdown()
+            finally:
+                self._rpc_limit.release()
+
+        session.shutdown = _shutdown  # type: ignore[method-assign]
+        return session
 
     async def _secure_one(self, entry: ConfigEntry, profile, password: str) -> dict[str, Any]:
         mac = entry.unique_id or entry.entry_id
@@ -1427,7 +1459,7 @@ class FleetRuntime:
         data = dict(entry.data)
         data[CONF_USERNAME] = "admin"
         data[CONF_PASSWORD] = password
-        self.hass.config_entries.async_update_entry(entry, data=data)
+        update_entry_if_changed(self.hass, entry, data=data)
 
     def _audit_row(self, mac: str, report: dict[str, Any], notes: list[str]) -> dict[str, Any]:
         report.setdefault("issues", [])

@@ -119,8 +119,19 @@ async def async_unload_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
     return unloaded
 
 
+_RELOAD_GUARD: set[str] = set()
+
+
 async def _reload(hass: HomeAssistant, entry: CONFIG_ENTRY) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
+    """Reload once. A write during setup must not start another reload."""
+    if entry.entry_id in _RELOAD_GUARD:
+        _LOGGER.warning("Skipped a recursive reload of Shelly Bulk")
+        return
+    _RELOAD_GUARD.add(entry.entry_id)
+    try:
+        await hass.config_entries.async_reload(entry.entry_id)
+    finally:
+        _RELOAD_GUARD.discard(entry.entry_id)
 
 
 def _async_register_services(hass: HomeAssistant) -> None:

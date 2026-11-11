@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.8
+
+- Shelly Bulk no longer reboots a device. `BLE.SetConfig`, `WiFi.SetConfig`, `Cloud.SetConfig`, `MQTT.SetConfig`, and `Sys.SetConfig` are sent only when the device value is different, including during adoption and the secure profile. Enabling the Home Assistant controls does not push those settings on startup or on a refresh.
+- A config-entry write that does not change data or options does not reload the entry, and a reload cannot start another reload. Network refreshes no longer fan out into another read of every select.
+
 ## 0.2.7
 
 - Startup no longer stops when the core Shelly device already has the MAC connection. The Shelly Bulk device for that Shelly does not register the MAC connection. It keeps the MAC in its name and in the MAC sensor, and it links to the core Shelly device. A device-registry error is logged and does not stop setup.

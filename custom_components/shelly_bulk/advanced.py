@@ -117,11 +117,36 @@ async def read_setting(session: Any, key: str, *, channel: int = 0) -> Any:
     return None
 
 
+def _same_value(current: Any, value: Any, key: str) -> bool:
+    """True when the device already has the value a write would send."""
+    if current is None:
+        return False
+    if key in {"auto_on_delay", "auto_off_delay", "transition_duration"}:
+        try:
+            return float(current) == float(value)
+        except (TypeError, ValueError):
+            return False
+    if key == "fade_rate":
+        try:
+            return int(current) == int(value)
+        except (TypeError, ValueError):
+            return False
+    if key in SWITCH_SETTINGS or isinstance(current, bool):
+        return bool(current) is bool(value)
+    return current == value
+
+
 async def write_setting(session: Any, key: str, value: Any, *, channel: int = 0) -> tuple[Any, str | None]:
     """Set one documented field and return the value read back.
 
     The second item is a note when the device has no component for the setting.
+    A value the device already has is not written again. SetConfig on BLE, Wi-Fi,
+    cloud, MQTT, or system config asks the device to restart even when nothing changed.
     """
+    if key not in {"input_mode", "power_on_state"}:
+        current = await read_setting(session, key, channel=channel)
+        if _same_value(current, value, key):
+            return current, None
     config = dict(getattr(session, "config", {}) or {})
     if key == "bluetooth":
         current = await _read(session, "BLE.GetConfig")
@@ -273,6 +298,9 @@ async def _write_mode_and_power(
             )
     except InvalidDeviceValue as err:
         return None, str(err)
+    if current.get("in_mode") == mode and current.get("initial_state") == initial:
+        read_back = mode if key == "input_mode" else initial
+        return read_back, note
     await session.call(
         f"{namespace}.SetConfig",
         {"id": channel, "config": {"in_mode": mode, "initial_state": initial}},

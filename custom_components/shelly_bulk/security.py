@@ -95,6 +95,14 @@ async def read_security_state(session: Any, notes: list[str], redact: Redact) ->
     return state
 
 
+def _debug_still_on(item: dict[str, Any]) -> bool:
+    debug = item.get("debug") if isinstance(item.get("debug"), dict) else {}
+    mqtt = debug.get("mqtt") if isinstance(debug.get("mqtt"), dict) else {}
+    websocket = debug.get("websocket") if isinstance(debug.get("websocket"), dict) else {}
+    udp = debug.get("udp") if isinstance(debug.get("udp"), dict) else {}
+    return bool(mqtt.get("enable") or websocket.get("enable") or udp.get("addr"))
+
+
 async def apply_secure_profile(
     session: Any,
     profile: SecureProfile,
@@ -106,16 +114,29 @@ async def apply_secure_profile(
 
     Returns True when Shelly.SetAuth was sent. The caller reconnects afterwards
     because digest auth changes under the open session.
+
+    A setting that is already in the requested state is not sent. Those
+    SetConfig calls set restart_required even when the value did not change.
     """
-    if profile.disable_cloud:
+    state = await read_security_state(session, notes, redact)
+
+    def _needs(component: str, predicate) -> bool:
+        payload = state.get(component)
+        if _unsupported(payload):
+            return True
+        return predicate(payload)
+
+    if profile.disable_cloud and _needs("cloud", lambda item: item.get("enable") is not False):
         await _try_call(session, "Cloud.SetConfig", {"config": {"enable": False}}, notes, "cloud", redact)
         await _try_call(session, "Cloud.GetConfig", None, notes, "cloud read-back", redact)
-    if profile.disable_ap:
+    if profile.disable_ap and _needs("wifi", lambda item: (item.get("ap") or {}).get("enable") is not False):
         await _try_call(
             session, "WiFi.SetConfig", {"config": {"ap": {"enable": False}}}, notes, "access point", redact
         )
         await _try_call(session, "WiFi.GetConfig", None, notes, "access point read-back", redact)
-    if profile.disable_ble_rpc:
+    if profile.disable_ble_rpc and _needs(
+        "ble", lambda item: (item.get("rpc") or {}).get("enable") is not False
+    ):
         await _try_call(
             session,
             "BLE.SetConfig",
@@ -125,13 +146,13 @@ async def apply_secure_profile(
             redact,
         )
         await _try_call(session, "BLE.GetConfig", None, notes, "bluetooth read-back", redact)
-    if profile.disable_mqtt:
+    if profile.disable_mqtt and _needs("mqtt", lambda item: item.get("enable") is not False):
         await _try_call(session, "MQTT.SetConfig", {"config": {"enable": False}}, notes, "mqtt", redact)
         await _try_call(session, "MQTT.GetConfig", None, notes, "mqtt read-back", redact)
-    if profile.disable_ws:
+    if profile.disable_ws and _needs("ws", lambda item: item.get("enable") is not False):
         await _try_call(session, "Ws.SetConfig", {"config": {"enable": False}}, notes, "outbound websocket", redact)
         await _try_call(session, "Ws.GetConfig", None, notes, "websocket read-back", redact)
-    if profile.disable_debug:
+    if profile.disable_debug and _needs("sys", _debug_still_on):
         debug_config = {
             "debug": {
                 "mqtt": {"enable": False},
@@ -160,7 +181,10 @@ async def apply_secure_profile(
                 redact,
             )
         await _try_call(session, "Sys.GetConfig", None, notes, "debug read-back", redact)
-    if profile.restrict_web_ui:
+    if profile.restrict_web_ui and _needs(
+        "sys",
+        lambda item: not isinstance(item.get("device"), dict) or item["device"].get("discoverable") is not False,
+    ):
         await _try_call(
             session,
             "Sys.SetConfig",
