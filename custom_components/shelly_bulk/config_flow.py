@@ -42,6 +42,7 @@ from .const import (
     CONF_AUTO_OFF_DELAY,
     CONF_AUTO_ON,
     CONF_AUTO_ON_DELAY,
+    CONF_BATCH_OUTPUT_TYPE,
     CONF_BLE_SCANNER_MODE,
     CONF_BUTTON_DIMMING,
     CONF_BUTTON_FADE_RATE,
@@ -456,6 +457,8 @@ class ShellyBulkOptionsFlow(OptionsFlow):
             updated[CONF_CONCURRENCY] = int(user_input[CONF_CONCURRENCY])
             updated[CONF_RETRIES] = int(user_input[CONF_RETRIES])
             updated[CONF_PROVISIONING_MINUTES] = int(user_input[CONF_PROVISIONING_MINUTES])
+            batch = str(user_input.get(CONF_BATCH_OUTPUT_TYPE) or "").strip().lower()
+            updated[CONF_BATCH_OUTPUT_TYPE] = batch if batch in CONSUMPTION_TYPES else ""
             return self.async_create_entry(data=updated)
         return self.async_show_form(
             step_id="provisioning",
@@ -485,6 +488,10 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                     vol.Required(
                         CONF_PROVISIONING_MINUTES, default=int(options.get(CONF_PROVISIONING_MINUTES, 30))
                     ): _number(5, 180),
+                    vol.Required(
+                        CONF_BATCH_OUTPUT_TYPE,
+                        default=str(options.get(CONF_BATCH_OUTPUT_TYPE) or options.get(CONF_DEFAULT_OUTPUT_TYPE) or "light"),
+                    ): _choice([(name, CONSUMPTION_LABELS.get(name, name)) for name in CONSUMPTION_TYPES]),
                 }
             ),
         )
@@ -555,13 +562,23 @@ class ShellyBulkOptionsFlow(OptionsFlow):
             except ValueError:
                 errors["mac"] = "invalid_mac"
             else:
+                profile = str(user_input.get("profile") or UNCHANGED)
                 added = await runtime.add_listed_device(
-                    mac, str(user_input.get("name") or ""), str(user_input.get("room") or "")
+                    mac,
+                    str(user_input.get("name") or ""),
+                    str(user_input.get("room") or ""),
+                    output_type=str(user_input.get("output_type") or runtime.site_default_output()),
+                    output_type_2=str(user_input.get("output_type_2") or runtime.site_default_output()),
+                    profile="" if profile == UNCHANGED else profile,
                 )
                 if not added:
                     errors["mac"] = "already_listed"
                 else:
                     return self.async_create_entry(data=dict(self.config_entry.options))
+        runtime = self._fleet()
+        default_output = runtime.site_default_output() if runtime is not None else "light"
+        from .device_type import PROFILE_CHOICES
+
         return self.async_show_form(
             step_id="add_device",
             data_schema=vol.Schema(
@@ -569,6 +586,16 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                     vol.Required("mac"): TextSelector(),
                     vol.Optional("name", default=""): TextSelector(),
                     vol.Optional("room", default=""): TextSelector(),
+                    vol.Required("output_type", default=default_output): _choice(
+                        [(name, CONSUMPTION_LABELS.get(name, name)) for name in CONSUMPTION_TYPES]
+                    ),
+                    vol.Required("output_type_2", default=default_output): _choice(
+                        [(name, CONSUMPTION_LABELS.get(name, name)) for name in CONSUMPTION_TYPES]
+                    ),
+                    vol.Required("profile", default=UNCHANGED): _choice(
+                        [(UNCHANGED, "Don't set")]
+                        + [(name, name) for name in PROFILE_CHOICES]
+                    ),
                 }
             ),
             errors=errors,

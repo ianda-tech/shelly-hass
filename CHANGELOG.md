@@ -8,6 +8,7 @@
 - The integration is shown as Shelly Installer. The domain stays `shelly_bulk`, and existing entity ids are unchanged.
 - Each switch channel has a consumption type select (switch, light, fan, socket, and the other values Shelly stores). It is written only when the value differs, and it does not reboot the device. Home Assistant shows the channel as a light when the type is light.
 - The site default output type is light. Adoption and profile apply set every switch channel to that default unless you have chosen a different type for that channel. Configure → Device type can set already-added Shellies, including ones that were in Home Assistant first, to the site default in one step. The core Shelly entry is reloaded afterwards so the light entities appear. The device is not rebooted.
+- Add device asks for an output type on each channel, pre-filled with the site default, and a profile. The profile is applied before the name when the device lists it, and the device restarts once. Auto-adopt and Find my Shelly use one batch output type. The choice is stored on the device, including optional `output_type`, `output_type_2`, and `profile` columns in `devices.csv`, and is treated as a user override afterwards.
 - Configure → Device type can set that consumption type for a group, and can change the device profile (switch or cover, or whatever Shelly.ListProfiles returns) only after you tick the reboot box. Profiles run one device at a time. The device reboots itself. The core Shelly entry is reloaded afterwards. No other action reboots a device.
 
 ## 0.2.8

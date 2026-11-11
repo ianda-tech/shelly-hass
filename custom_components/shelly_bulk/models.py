@@ -83,8 +83,17 @@ class AllowDevice:
     name: str = ""
     room: str = ""
     model_hint: str = ""
+    output_type: str = ""
+    output_type_2: str = ""
+    profile: str = ""
     all_channels: ChannelSettings = field(default_factory=ChannelSettings)
     by_channel: dict[int, ChannelSettings] = field(default_factory=dict)
+
+    def output_for(self, channel: int) -> str:
+        """Consumption type chosen for this channel. Channel 2 can differ."""
+        if channel == 1 and self.output_type_2:
+            return self.output_type_2
+        return self.output_type
 
     def settings_for(self, index: int, base: ChannelSettings) -> ChannelSettings:
         merged = merge_channel(base, self.all_channels)
@@ -99,6 +108,9 @@ class AllowDevice:
             "name": self.name,
             "room": self.room,
             "model_hint": self.model_hint,
+            "output_type": self.output_type,
+            "output_type_2": self.output_type_2,
+            "profile": self.profile,
             "all_channels": channel_to_dict(self.all_channels),
             "by_channel": {
                 str(index): channel_to_dict(settings)
@@ -117,6 +129,9 @@ class AllowDevice:
             name=data.get("name") or "",
             room=data.get("room") or "",
             model_hint=data.get("model_hint") or "",
+            output_type=data.get("output_type") or "",
+            output_type_2=data.get("output_type_2") or "",
+            profile=data.get("profile") or "",
             all_channels=channel_from_dict(data.get("all_channels")),
             by_channel=channels,
         )

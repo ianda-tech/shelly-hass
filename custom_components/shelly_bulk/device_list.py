@@ -23,6 +23,9 @@ COLUMNS = (
     "initial_state",
     "fade_rate",
     "transition",
+    "output_type",
+    "output_type_2",
+    "profile",
 )
 
 # Comments are skipped by the parser. After that skip, a new file is a header
@@ -30,9 +33,11 @@ COLUMNS = (
 DEVICE_LIST_TEMPLATE = """# Shelly Installer device list. Created automatically. An existing file is never overwritten.
 # Edit names and rooms with the File editor, Samba, or the Studio Code Server add-on, then press Reload device list.
 # Lines starting with # are ignored. A header with no devices is an empty list, not an error.
-# Columns: mac,name,room,model_hint,input,initial_state,fade_rate,transition
+# Columns: mac,name,room,model_hint,input,initial_state,fade_rate,transition,output_type,output_type_2,profile
+# output_type and profile are optional. output_type is the consumption type (light, switch, fan, socket, ...).
+# output_type_2 is only needed when channel 2 differs. profile is switch, cover, or another mode the model lists.
 # Example only. This is not a real device. Delete the leading # to use the row:
-# 00:00:00:00:00:01,Example light,Example room,,detached,restore_last,2,1.5
+# 00:00:00:00:00:01,Example light,Example room,,detached,restore_last,2,1.5,light,,switch
 """ + ",".join(COLUMNS) + "\n"
 
 
@@ -57,11 +62,38 @@ def _cell(value: str) -> str:
     return text
 
 
+def _extend_columns(text: str) -> str:
+    """Add output_type and profile to an older header without changing existing cells."""
+    comments = [line for line in text.splitlines() if line.lstrip().startswith("#")]
+    body = without_csv_comments(text)
+    reader = csv.DictReader(io.StringIO(body))
+    if not reader.fieldnames:
+        return text
+    fields = [name.strip() for name in reader.fieldnames if name]
+    extra = [name for name in ("output_type", "output_type_2", "profile") if name not in fields]
+    if not extra:
+        return text
+    fields.extend(extra)
+    rows = [{name: (raw.get(name) or "") for name in fields} for raw in reader]
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fields, extrasaction="ignore", lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
+    prefix = ("\n".join(comments) + "\n") if comments else ""
+    return prefix + buffer.getvalue()
+
+
 def append_device_rows(path: Path, rows: list[dict[str, str]]) -> list[str]:
     """Append MACs that are not already in the file. Existing lines are not rewritten."""
     ensure_device_list(path)
     text = path.read_text(encoding="utf-8-sig") if path.is_file() else ""
+    extended = _extend_columns(text)
+    if extended != text:
+        path.write_text(extended, encoding="utf-8")
+        text = extended
     parsed, _errors = parse_allowlist_csv(text)
+    header = csv.DictReader(io.StringIO(without_csv_comments(text)))
+    fieldnames = [name.strip() for name in (header.fieldnames or COLUMNS) if name]
     existing = set(parsed.devices)
     lines: list[str] = []
     added: list[str] = []
@@ -70,21 +102,12 @@ def append_device_rows(path: Path, rows: list[dict[str, str]]) -> list[str]:
         if mac in existing:
             continue
         existing.add(mac)
-        lines.append(
-            ",".join(
-                _cell(value)
-                for value in (
-                    display_mac(mac),
-                    row.get("name") or "",
-                    row.get("room") or "",
-                    row.get("model_hint") or "",
-                    row.get("input") or "",
-                    row.get("initial_state") or "",
-                    row.get("fade_rate") or "",
-                    row.get("transition") or "",
-                )
-            )
-        )
+        values = {"mac": display_mac(mac)}
+        for name in fieldnames:
+            if name == "mac":
+                continue
+            values[name] = row.get(name) or ""
+        lines.append(",".join(_cell(values.get(name) or "") for name in fieldnames))
         added.append(mac)
     if not lines:
         return []

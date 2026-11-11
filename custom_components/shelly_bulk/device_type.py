@@ -24,6 +24,8 @@ CONSUMPTION_TYPES: tuple[str, ...] = (
     "other",
 )
 
+PROFILE_CHOICES: tuple[str, ...] = ("switch", "cover", "light", "rgb", "rgbw", "cct")
+
 CONSUMPTION_LABELS: dict[str, str] = {
     "switch": "Switch",
     "light": "Light",

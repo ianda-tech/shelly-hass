@@ -384,6 +384,9 @@ class FleetRuntime:
                 name=row.get("name") or "",
                 room=row.get("room") or "",
                 model_hint=row.get("model_hint") or "",
+                output_type=str(row.get("output_type") or "").strip().lower(),
+                output_type_2=str(row.get("output_type_2") or "").strip().lower(),
+                profile=str(row.get("profile") or "").strip().lower(),
             )
         merge_allowlist(self.allowlist, incoming)
 
@@ -395,6 +398,15 @@ class FleetRuntime:
         self.notify()
         return added
 
+    def batch_output_type(self) -> str:
+        """Output type for auto-adopt and Find my Shelly. Falls back to the site default."""
+        from .device_type import CONSUMPTION_TYPES
+
+        raw = str(self.entry.options.get("batch_output_type") or "").strip().lower()
+        if raw in CONSUMPTION_TYPES:
+            return raw
+        return self.site_default_output()
+
     async def note_new_device(
         self,
         mac: str,
@@ -403,14 +415,24 @@ class FleetRuntime:
         room: str = "",
         model_hint: str = "",
         placeholder: bool = False,
+        output_type: str = "",
     ) -> list[str]:
         """Record a newly seen Shelly. Does nothing when the MAC is already listed."""
         plain = normalize_mac(mac)
         if plain in self.allowlist:
             return []
         display_name = placeholder_name(model_hint, plain) if placeholder else name
+        chosen = output_type or self.batch_output_type()
         added = await self.append_listed_devices(
-            [{"mac": plain, "name": display_name, "room": room, "model_hint": model_hint}]
+            [
+                {
+                    "mac": plain,
+                    "name": display_name,
+                    "room": room,
+                    "model_hint": model_hint,
+                    "output_type": chosen,
+                }
+            ]
         )
         if added and placeholder:
             self._notify(
@@ -421,12 +443,31 @@ class FleetRuntime:
             )
         return added
 
-    async def add_listed_device(self, mac: str, name: str, room: str) -> bool:
+    async def add_listed_device(
+        self,
+        mac: str,
+        name: str,
+        room: str,
+        *,
+        output_type: str = "",
+        output_type_2: str = "",
+        profile: str = "",
+    ) -> bool:
         plain = normalize_mac(mac)
         if plain in self.allowlist:
             return False
         added = await self.append_listed_devices(
-            [{"mac": plain, "name": name.strip(), "room": room.strip(), "model_hint": ""}]
+            [
+                {
+                    "mac": plain,
+                    "name": name.strip(),
+                    "room": room.strip(),
+                    "model_hint": "",
+                    "output_type": output_type.strip().lower(),
+                    "output_type_2": output_type_2.strip().lower(),
+                    "profile": "" if profile in {"", "unchanged"} else profile.strip().lower(),
+                }
+            ]
         )
         return bool(added)
 
@@ -461,6 +502,9 @@ class FleetRuntime:
                 added_already.add(item.mac)
         adopt = self.effective_auto_adopt
         rows, locked = rows_for_discovery(heard, known=known, already_added=added_already, adopt=adopt)
+        batch_type = self.batch_output_type()
+        for row in rows:
+            row["output_type"] = batch_type
         for mac in locked:
             hint = next((item.model_hint for item in heard if item.mac == mac), "")
             self.flag_locked(mac, hint)
@@ -1315,6 +1359,39 @@ class FleetRuntime:
                 notes.append("Authentication is already enabled. The password was left unchanged.")
 
             device_name = listed.name if listed and listed.name else ""
+            if listed is not None and listed.profile:
+                from .device_type import write_profile
+
+                if await write_profile(session, listed.profile):
+                    notes.append(
+                        f"Profile set to {listed.profile} before the name. The device restarts once."
+                    )
+                    try:
+                        await session.shutdown()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    session = None
+                    await self._pause(8)
+                    session = await self._connect_with_retries(
+                        host, port, username, password, verify_ssl
+                    )
+            if listed is not None and (listed.output_type or listed.output_type_2):
+                from .device_type import switch_channels, write_consumption
+
+                channels = switch_channels(dict(getattr(session, "config", {}) or {})) or [0]
+                changed_output = False
+                for channel in channels:
+                    value = listed.output_for(channel)
+                    if not value:
+                        continue
+                    written, changed = await write_consumption(session, channel, value)
+                    if written is not None:
+                        self.remember_output_override(entry.entry_id, channel, written)
+                        changed_output = changed_output or changed
+                        if changed:
+                            notes.append(f"Output type channel {channel + 1} set to {written}.")
+                if changed_output:
+                    self._reload_shelly_later(entry, 2)
             security = security_from_entry(self.entry.data, self.entry.options, device_name) if include_security else None
             options = dict(self.entry.options) if use_profile else {}
             calls, plan_notes = plan_config_calls(

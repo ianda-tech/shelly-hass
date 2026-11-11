@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.shelly_bulk.allowlist import parse_allowlist_csv
 from custom_components.shelly_bulk.const import DOMAIN
+from custom_components.shelly_bulk.models import AllowDevice
 from custom_components.shelly_bulk.device_type import (
     apply_default_output,
     consumption_list_with,
@@ -197,6 +201,71 @@ async def test_profile_changes_wait_between_devices(hass, monkeypatch) -> None:
         (second.entry_id, 2),
         (second.entry_id, 15),
     ]
+
+
+def test_csv_output_type_and_profile_are_optional() -> None:
+    parsed, errors = parse_allowlist_csv(
+        "mac,name,output_type,output_type_2,profile\n"
+        "00:00:00:00:00:0A,Porch,fan,light,cover\n"
+    )
+    assert errors == []
+    device = parsed.devices["00000000000A"]
+    assert device.output_type == "fan"
+    assert device.output_type_2 == "light"
+    assert device.profile == "cover"
+    assert device.output_for(0) == "fan"
+    assert device.output_for(1) == "light"
+    assert isinstance(device, AllowDevice)
+
+
+async def test_add_device_stores_output_type_and_profile(hass, monkeypatch) -> None:
+    async def _offline(*_args, **_kwargs):
+        raise OSError("offline")
+
+    monkeypatch.setattr(
+        "custom_components.shelly_bulk.runtime.FleetRuntime._connect_with_retries",
+        _offline,
+    )
+    entry = _entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_device"}
+    )
+    assert result["step_id"] == "add_device"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "mac": "AA:BB:CC:DD:EE:10",
+            "name": "Porch",
+            "room": "Hall",
+            "output_type": "fan",
+            "output_type_2": "light",
+            "profile": "cover",
+        },
+    )
+    assert result["type"] == "create_entry", result
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    listed = runtime.allowlist.get("AABBCCDDEE10")
+    assert listed is not None
+    assert listed.output_type == "fan"
+    assert listed.output_type_2 == "light"
+    assert listed.profile == "cover"
+    text = Path(hass.config.path("shelly_bulk/devices.csv")).read_text(encoding="utf-8")
+    assert "fan" in text
+    assert "cover" in text
+
+
+async def test_saved_profile_is_sent_without_a_reboot_call() -> None:
+    session = _Session()
+    device = AllowDevice(mac="00000000000A", output_type="fan", profile="cover")
+    assert await write_profile(session, device.profile) is True
+    written, changed = await write_consumption(session, 0, device.output_for(0))
+    assert (written, changed) == ("fan", True)
+    assert session.calls.index("Shelly.SetProfile") < session.calls.index("Sys.SetConfig")
+    assert "Shelly.Reboot" not in session.calls
 
 
 async def test_site_default_skips_overrides_and_does_not_reboot() -> None:

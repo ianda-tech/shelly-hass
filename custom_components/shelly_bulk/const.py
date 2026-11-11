@@ -48,6 +48,7 @@ CONF_INPUT_INVERT: Final = "input_invert"
 
 CONF_APPLY_OUTPUT_PROFILE: Final = "apply_output_profile"
 CONF_DEFAULT_OUTPUT_TYPE: Final = "default_output_type"
+CONF_BATCH_OUTPUT_TYPE: Final = "batch_output_type"
 CONF_INITIAL_STATE: Final = "initial_state"
 CONF_AUTO_ON: Final = "auto_on"
 CONF_AUTO_ON_DELAY: Final = "auto_on_delay"

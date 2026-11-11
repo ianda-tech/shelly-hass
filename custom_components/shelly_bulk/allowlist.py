@@ -139,6 +139,12 @@ def merge_allowlist(base: Allowlist, incoming: Allowlist) -> None:
             current.room = device.room
         if device.model_hint:
             current.model_hint = device.model_hint
+        if device.output_type:
+            current.output_type = device.output_type
+        if device.output_type_2:
+            current.output_type_2 = device.output_type_2
+        if device.profile:
+            current.profile = device.profile
         current.all_channels = merge_channel(current.all_channels, device.all_channels)
         for index, settings in device.by_channel.items():
             current.by_channel[index] = merge_channel(
@@ -182,6 +188,12 @@ def parse_allowlist_csv(text: str) -> tuple[Allowlist, list[str]]:
             device.room = row["room"]
         if row.get("model_hint"):
             device.model_hint = row["model_hint"]
+        if row.get("output_type"):
+            device.output_type = row["output_type"].strip().lower()
+        if row.get("output_type_2"):
+            device.output_type_2 = row["output_type_2"].strip().lower()
+        if row.get("profile"):
+            device.profile = row["profile"].strip().lower()
         settings = channel_from_row(row)
         if channel is None:
             device.all_channels = settings
