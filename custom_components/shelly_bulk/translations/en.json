@@ -599,7 +599,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         }
       }
     },

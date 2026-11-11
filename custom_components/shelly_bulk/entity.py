@@ -180,21 +180,18 @@ def retire_stale_devices(hass, bulk_entry) -> None:
                 blocked = True
         if blocked:
             continue
-        others = [
-            entry_id
-            for entry_id in device_config_entry_ids(device)
-            if entry_id != bulk_entry.entry_id
-        ]
+        # A device belongs to one config entry. This list is the devices this
+        # integration owns. A core Shelly device is not in the list, so it is
+        # not removed. remove_config_entry_id is gone on Home Assistant 2026.11.
+        if bulk_entry.entry_id not in device_config_entry_ids(device):
+            continue
         try:
-            if others:
-                safe_device_update(registry, device.id, remove_config_entry_id=bulk_entry.entry_id)
-            else:
-                _LOGGER.info(
-                    "Removing stale Shelly Installer device %s with identifiers %s",
-                    device.name,
-                    sorted(device.identifiers),
-                )
-                registry.async_remove_device(device.id)
+            _LOGGER.info(
+                "Removing stale Shelly Installer device %s with identifiers %s",
+                device.name,
+                sorted(device.identifiers),
+            )
+            registry.async_remove_device(device.id)
         except Exception:
             _LOGGER.exception("Could not remove stale device %s", device.id)
 

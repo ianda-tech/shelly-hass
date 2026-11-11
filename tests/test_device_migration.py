@@ -6,11 +6,11 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_registry import RegistryEntryDisabler
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.shelly_bulk import async_migrate_entry, async_remove_config_entry_device
 from custom_components.shelly_bulk.const import DOMAIN
-from custom_components.shelly_bulk.entity import shelly_device_info
+from custom_components.shelly_bulk.entity import device_by_identifier, shelly_device_info
 
 from test_integration import _entry
 
@@ -35,7 +35,6 @@ async def test_stale_devices_move_onto_one_companion_and_core_shelly_stays(hass)
         connections={(dr.CONNECTION_NETWORK_MAC, "48:f6:ee:ba:6e:fc")},
         name="Porch",
     )
-    devices.async_update_device(core.id, add_config_entry_id=bulk.entry_id)
     old = devices.async_get_or_create(
         config_entry_id=bulk.entry_id,
         identifiers={("shelly", shelly.entry_id)},
@@ -73,10 +72,13 @@ async def test_stale_devices_move_onto_one_companion_and_core_shelly_stays(hass)
     kept_core = devices.async_get(core.id)
     assert kept_core is not None
     assert kept_core.name == "Porch"
-    assert shelly.entry_id in kept_core.config_entries
-    assert bulk.entry_id not in kept_core.config_entries
+    assert kept_core.config_entry_id == shelly.entry_id
     assert (dr.CONNECTION_NETWORK_MAC, "48:f6:ee:ba:6e:fc") in kept_core.connections
-    companion = devices.async_get_device(identifiers={(DOMAIN, f"companion_{shelly.entry_id}")})
+    companion = device_by_identifier(
+        devices,
+        (DOMAIN, f"companion_{shelly.entry_id}"),
+        bulk.entry_id,
+    )
     assert companion is not None
     kept = entities.async_get(entity_id)
     assert kept is not None

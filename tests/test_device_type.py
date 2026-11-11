@@ -6,7 +6,7 @@ from pathlib import Path
 
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.shelly_bulk.allowlist import parse_allowlist_csv
 from custom_components.shelly_bulk.const import DOMAIN
