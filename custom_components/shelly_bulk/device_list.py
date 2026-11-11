@@ -27,7 +27,7 @@ COLUMNS = (
 
 # Comments are skipped by the parser. After that skip, a new file is a header
 # and nothing else, so the first import is an empty list.
-DEVICE_LIST_TEMPLATE = """# Shelly Bulk device list. Created automatically. An existing file is never overwritten.
+DEVICE_LIST_TEMPLATE = """# Shelly Installer device list. Created automatically. An existing file is never overwritten.
 # Edit names and rooms with the File editor, Samba, or the Studio Code Server add-on, then press Reload device list.
 # Lines starting with # are ignored. A header with no devices is an empty list, not an error.
 # Columns: mac,name,room,model_hint,input,initial_state,fade_rate,transition

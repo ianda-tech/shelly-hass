@@ -363,7 +363,7 @@ class Provisioner:
         self.runtime.record(
             mac,
             "skipped_auth",
-            "The device already asks for a password. The Shelly Bulk device password was not sent.",
+            "The device already asks for a password. The Shelly Installer device password was not sent.",
         )
 
     async def _safe_abort(self, flow_id: str) -> None:

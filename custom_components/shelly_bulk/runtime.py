@@ -118,7 +118,7 @@ class FleetRuntime:
 
     @property
     def site_name(self) -> str:
-        return str(self.entry.data.get(CONF_SITE_NAME) or "Shelly Bulk")
+        return str(self.entry.data.get(CONF_SITE_NAME) or "Shelly Installer")
 
     @property
     def require_allowlist(self) -> bool:
@@ -740,7 +740,7 @@ class FleetRuntime:
             name="shelly_bulk_bulk_set",
         )
         self._notify(
-            "Shelly Bulk",
+            "Shelly Installer",
             f"Applying settings to {len(ids)} devices.",
             "shelly_bulk_bulk",
         )
@@ -773,7 +773,7 @@ class FleetRuntime:
                 self.record(mac, status, reason, count=False, ip=ip, host=ip)
                 lines.append(f"{label}: {status}" + (f" ({reason})" if reason else ""))
                 self._notify(
-                    "Shelly Bulk",
+                    "Shelly Installer",
                     f"Applying settings to {len(entry_ids)} devices.\n"
                     f"{ok} ok, {failed} failed, {skipped} skipped, {len(entry_ids) - ok - failed - skipped} left.\n"
                     + "\n".join(lines[-8:]),
@@ -782,7 +782,7 @@ class FleetRuntime:
 
         await asyncio.gather(*(_one(entry_id) for entry_id in entry_ids))
         self._notify(
-            "Shelly Bulk",
+            "Shelly Installer",
             f"Finished. {ok} ok, {failed} failed, {skipped} skipped.\n" + "\n".join(lines[-20:]),
             "shelly_bulk_bulk",
         )
@@ -1134,7 +1134,7 @@ class FleetRuntime:
             if restart:
                 notes.append(
                     "The device asked to restart after a setting change. "
-                    "Shelly Bulk does not reboot it."
+                    "Shelly Installer does not reboot it."
                 )
 
             firmware = str(shelly.get("ver") or "")

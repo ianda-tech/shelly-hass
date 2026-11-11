@@ -1,6 +1,6 @@
 {
   "domain": "shelly_bulk",
-  "name": "Shelly Bulk",
+  "name": "Shelly Installer",
   "after_dependencies": ["shelly", "bluetooth"],
   "categories": ["plugs_switches", "lighting"],
   "codeowners": ["@ianda-tech"],

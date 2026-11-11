@@ -26,9 +26,9 @@ class FleetEntity(Entity):
         self._attr_unique_id = f"{entry.entry_id}_{unique_suffix}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
-            name=f"Shelly Bulk ({runtime.site_name})",
+            name=f"Shelly Installer ({runtime.site_name})",
             manufacturer=MANUFACTURER,
-            model="Shelly Bulk",
+            model="Shelly Installer",
             sw_version=VERSION,
         )
 
@@ -105,9 +105,9 @@ def _ensure_hub(hass, bulk_entry) -> str:
     created = registry.async_get_or_create(
         config_entry_id=bulk_entry.entry_id,
         identifiers={(DOMAIN, bulk_entry.entry_id)},
-        name=f"Shelly Bulk ({bulk_entry.title})",
+        name=f"Shelly Installer ({bulk_entry.title})",
         manufacturer=MANUFACTURER,
-        model="Shelly Bulk",
+        model="Shelly Installer",
     )
     return created.id
 
@@ -190,7 +190,7 @@ def retire_stale_devices(hass, bulk_entry) -> None:
                 safe_device_update(registry, device.id, remove_config_entry_id=bulk_entry.entry_id)
             else:
                 _LOGGER.info(
-                    "Removing stale Shelly Bulk device %s with identifiers %s",
+                    "Removing stale Shelly Installer device %s with identifiers %s",
                     device.name,
                     sorted(device.identifiers),
                 )

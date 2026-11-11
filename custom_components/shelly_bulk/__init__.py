@@ -54,12 +54,12 @@ def _runtime(hass: HomeAssistant, call: ServiceCall) -> FleetRuntime:
         for runtime in runtimes.values():
             if runtime.site_name == site:
                 return runtime
-        raise ServiceValidationError(f"No Shelly Bulk entry named {site}")
+        raise ServiceValidationError(f"No Shelly Installer entry named {site}")
     if len(runtimes) == 1:
         return next(iter(runtimes.values()))
     if not runtimes:
-        raise ServiceValidationError("Shelly Bulk is not set up")
-    raise ServiceValidationError("More than one Shelly Bulk entry is set up; pass site")
+        raise ServiceValidationError("Shelly Installer is not set up")
+    raise ServiceValidationError("More than one Shelly Installer entry is set up; pass site")
 
 
 def _reenable_integration_disabled(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -151,7 +151,7 @@ _RELOAD_GUARD: set[str] = set()
 async def _reload(hass: HomeAssistant, entry: CONFIG_ENTRY) -> None:
     """Reload once. A write during setup must not start another reload."""
     if entry.entry_id in _RELOAD_GUARD:
-        _LOGGER.warning("Skipped a recursive reload of Shelly Bulk")
+        _LOGGER.warning("Skipped a recursive reload of Shelly Installer")
         return
     _RELOAD_GUARD.add(entry.entry_id)
     try:

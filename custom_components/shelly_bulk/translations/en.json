@@ -12,10 +12,10 @@
           "timezone": "Timezone"
         },
         "data_description": {
-          "site_name": "A label for this Shelly Bulk entry, shown in Home Assistant.",
+          "site_name": "A label for this Shelly Installer entry, shown in Home Assistant.",
           "wifi_ssid": "2.4 GHz network. WPA3-only and 5 GHz-only networks will not join.",
           "wifi_password": "Stored on this config entry. It is not written to logs or diagnostics.",
-          "fleet_password": "Password for the Shelly local web page and API. Username is always admin. Shelly Bulk saves it into the Shelly integration so Home Assistant stays connected. Leave blank for no login.",
+          "fleet_password": "Password for the Shelly local web page and API. Username is always admin. Shelly Installer saves it into the Shelly integration so Home Assistant stays connected. Leave blank for no login.",
           "timezone": "Optional. An IANA tz database name, case-sensitive, Region/City, for example Australia/Melbourne, Australia/Sydney, or Europe/London. Abbreviations such as AEDT and offsets such as UTC+11 are not accepted. This sets the device clock zone for on-device schedules and sunrise/sunset. It matters more when Shelly Cloud is off, because the device will not auto-detect a zone. Leave it blank and no location.tz is sent."
         }
       },
@@ -49,14 +49,14 @@
     },
     "abort": {
       "already_configured": "This site name is already configured.",
-      "not_loaded": "Shelly Bulk is not loaded yet. Finish setup and try again.",
+      "not_loaded": "Shelly Installer is not loaded yet. Finish setup and try again.",
       "allowlist_imported": "Imported {count} devices into this Home Assistant instance."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Shelly Bulk options",
+        "title": "Shelly Installer options",
         "menu_options": {
           "wifi": "Wi-Fi",
           "security": "Security and timezone",
@@ -304,11 +304,11 @@
       "invalid_mac": "Enter a 12-digit MAC address.",
       "already_listed": "That MAC is already on the device list. Edit the CSV to change its name or room.",
       "not_applied": "The device did not keep this value. It was left as it is.",
-      "not_reachable": "Shelly Bulk could not open this device. Check that it is online."
+      "not_reachable": "Shelly Installer could not open this device. Check that it is online."
     },
     "abort": {
       "allowlist_imported": "Imported {count} devices into this Home Assistant instance.",
-      "not_loaded": "Shelly Bulk is not loaded yet. Finish setup and try again.",
+      "not_loaded": "Shelly Installer is not loaded yet. Finish setup and try again.",
       "no_devices": "No Shelly devices have been added yet.",
       "bulk_started": "Applying settings to {count} devices. Progress and results are in a notification, and in the report.",
       "device_saved": "Saved this device. No other devices were changed.",
@@ -409,7 +409,7 @@
   "services": {
     "apply_profile": {
       "name": "Apply profile",
-      "description": "Apply the Shelly Bulk security and channel profile to Shelly devices already added by the core Shelly integration. Sets the device login only when a device has no password. Devices that already have a password are not changed, and Home Assistant keeps the password already stored for them.",
+      "description": "Apply the Shelly Installer security and channel profile to Shelly devices already added by the core Shelly integration. Sets the device login only when a device has no password. Devices that already have a password are not changed, and Home Assistant keeps the password already stored for them.",
       "fields": {
         "device_id": {
           "name": "Devices",
@@ -421,7 +421,7 @@
         },
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name. Required only when more than one Shelly Bulk entry exists."
+          "description": "Shelly Installer site name. Required only when more than one Shelly Installer entry exists."
         },
         "mac": {
           "name": "MAC address",
@@ -451,7 +451,7 @@
         },
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         },
         "mac": {
           "name": "MAC address",
@@ -489,7 +489,7 @@
         },
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         },
         "mac": {
           "name": "MAC address",
@@ -523,7 +523,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         },
         "provisioning_minutes": {
           "name": "Timeout (minutes)",
@@ -537,7 +537,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         }
       }
     },
@@ -557,7 +557,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         },
         "format": {
           "name": "Format",
@@ -571,7 +571,7 @@
       "fields": {
         "site": {
           "name": "Site",
-          "description": "Shelly Bulk site name when more than one entry exists."
+          "description": "Shelly Installer site name when more than one entry exists."
         },
         "filename": {
           "name": "Filename",
@@ -589,7 +589,7 @@
       "fields": {
         "device_id": {"name": "Devices", "description": "Core Shelly devices to secure."},
         "area_id": {"name": "Areas", "description": "Secure every core Shelly device in these areas."},
-        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "site": {"name": "Site", "description": "Shelly Installer site name when more than one entry exists."},
         "mac": {"name": "MAC address", "description": "Optional device MAC."},
         "all_shelly": {"name": "All Shelly devices", "description": "Secure every core Shelly config entry."},
         "rotate_password": {"name": "Set login when missing", "description": "Shelly.SetAuth with username admin, only when the device has no login. Does not replace an existing password."},
@@ -609,7 +609,7 @@
       "fields": {
         "device_id": {"name": "Devices", "description": "Core Shelly devices to read. Omit, with no area or MAC, to audit every Shelly."},
         "area_id": {"name": "Areas", "description": "Audit every core Shelly device in these areas."},
-        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "site": {"name": "Site", "description": "Shelly Installer site name when more than one entry exists."},
         "mac": {"name": "MAC address", "description": "Optional device MAC."},
         "all_shelly": {"name": "All Shelly devices", "description": "Audit every core Shelly config entry."}
       }
@@ -620,7 +620,7 @@
       "fields": {
         "device_id": {"name": "Devices", "description": "Core Shelly devices to update."},
         "area_id": {"name": "Areas", "description": "Update every core Shelly device in these areas."},
-        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "site": {"name": "Site", "description": "Shelly Installer site name when more than one entry exists."},
         "mac": {"name": "MAC address", "description": "Optional device MAC."},
         "all_shelly": {"name": "All Shelly devices", "description": "Update every core Shelly config entry."},
         "channel": {"name": "Channel", "description": "Input or output index. Defaults to 0."},
@@ -651,7 +651,7 @@
       "fields": {
         "device_id": {"name": "Devices", "description": "Core Shelly devices to update."},
         "area_id": {"name": "Areas", "description": "Update every core Shelly device in these areas."},
-        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "site": {"name": "Site", "description": "Shelly Installer site name when more than one entry exists."},
         "all": {"name": "All Shellies", "description": "Update every core Shelly config entry."},
         "model": {"name": "Model", "description": "Model code or name, for example S3SW-001P8EU."},
         "input_type": {"name": "Input type", "description": "switch or button."},
