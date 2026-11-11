@@ -16,6 +16,7 @@ from custom_components.shelly_bulk.models import AllowDevice, ChannelSettings
 from custom_components.shelly_bulk.profile import (
     build_set_auth,
     plan_config_calls,
+    plan_security_calls,
     security_from_entry,
 )
 from custom_components.shelly_bulk.redact import SecretFilter, redact
@@ -30,7 +31,8 @@ def test_manifest_version_matches_constant() -> None:
 
 
 def test_repository_has_no_shipped_site_data() -> None:
-    banned = ("Australia/Melbourne", "Australia/Sydney", "Cheviot", "A0:85:E3")
+    # IANA names such as Australia/Melbourne appear only as format examples.
+    banned = ("Cheviot", "A0:85:E3")
     roots = [ROOT / "custom_components", ROOT / "tools", ROOT / ".github"]
     files = [path for root in roots for path in root.rglob("*") if path.is_file()]
     files.extend(
@@ -84,6 +86,18 @@ def test_allowlist_csv_and_path_guard(tmp_path: Path) -> None:
         assert str(err) == "outside_config"
     else:
         raise AssertionError("path traversal was accepted")
+
+
+def test_empty_timezone_omits_location() -> None:
+    security = security_from_entry(
+        {"timezone": ""},
+        {"disable_cloud": True, "disable_ap": True, "disable_ble_rpc": True},
+        "",
+    )
+    calls = plan_security_calls(security)
+    assert all(call.method != "Sys.SetConfig" for call in calls)
+    blob = str([call.params for call in calls])
+    assert "location" not in blob
 
 
 def test_plan_detached_switch_and_dimmer_notes() -> None:

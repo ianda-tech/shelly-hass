@@ -141,7 +141,7 @@ class ShellyBulkConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             timezone = str(user_input.get(CONF_TIMEZONE) or "").strip()
-            if not _valid_timezone(timezone):
+            if timezone and not _valid_timezone(timezone):
                 errors[CONF_TIMEZONE] = "invalid_timezone"
             else:
                 user_input[CONF_TIMEZONE] = timezone
@@ -151,14 +151,17 @@ class ShellyBulkConfigFlow(ConfigFlow, domain=DOMAIN):
                 return await self.async_step_behaviour()
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_SITE_NAME): TextSelector(),
-                    vol.Required(CONF_WIFI_SSID): TextSelector(),
-                    vol.Required(CONF_WIFI_PASSWORD): _PASSWORD,
-                    vol.Optional(CONF_FLEET_PASSWORD, default=""): _PASSWORD,
-                    vol.Required(CONF_TIMEZONE): TextSelector(),
-                }
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required(CONF_SITE_NAME): TextSelector(),
+                        vol.Required(CONF_WIFI_SSID): TextSelector(),
+                        vol.Required(CONF_WIFI_PASSWORD): _PASSWORD,
+                        vol.Optional(CONF_FLEET_PASSWORD, default=""): _PASSWORD,
+                        vol.Optional(CONF_TIMEZONE): TextSelector(),
+                    }
+                ),
+                {CONF_TIMEZONE: self.hass.config.time_zone or ""},
             ),
             errors=errors,
             description_placeholders={
@@ -237,6 +240,8 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                     errors[CONF_TIMEZONE] = "invalid_timezone"
                 else:
                     data[CONF_TIMEZONE] = timezone
+            elif user_input.get("clear_timezone"):
+                data[CONF_TIMEZONE] = ""
             if str(user_input.get(CONF_FLEET_PASSWORD) or ""):
                 data[CONF_FLEET_PASSWORD] = str(user_input[CONF_FLEET_PASSWORD])
             if not errors:
@@ -253,6 +258,7 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                     {
                         vol.Optional(CONF_FLEET_PASSWORD, default=""): _PASSWORD,
                         vol.Optional(CONF_TIMEZONE, default=""): TextSelector(),
+                        vol.Required("clear_timezone", default=False): BooleanSelector(),
                         vol.Required(CONF_DISABLE_CLOUD, default=True): BooleanSelector(),
                         vol.Required(CONF_DISABLE_AP, default=True): BooleanSelector(),
                         vol.Required(CONF_DISABLE_BLE_RPC, default=True): BooleanSelector(),

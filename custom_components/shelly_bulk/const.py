@@ -7,7 +7,7 @@ from typing import Final
 DOMAIN: Final = "shelly_bulk"
 SHELLY_DOMAIN: Final = "shelly"
 MANUFACTURER: Final = "Innovate and Automate"
-VERSION: Final = "0.2.0"
+VERSION: Final = "0.2.1"
 
 # Home Assistant's Shelly flow uses these step ids (core dev, November 2026).
 STEP_BLUETOOTH_CONFIRM: Final = "bluetooth_confirm"

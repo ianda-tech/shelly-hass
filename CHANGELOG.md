@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Timezone is optional. The config flow pre-fills Home Assistant's own zone (`Settings > System > General`) as a suggestion, read at runtime rather than shipped. Clear the field and no `location.tz` is sent. A filled value must be an IANA `Region/City` name, for example Australia/Melbourne. In options, leave the box blank to keep the stored zone, or tick Clear timezone to remove it.
+
 ## 0.2.0
 
 - Secure profile, in the options flow and the `secure_devices` service. It sets or rotates digest auth, and can turn off cloud, the access point, Bluetooth RPC, MQTT, the outbound websocket, and debug/UDP logging. Bluetooth stays enabled for the scanner. Web UI discovery can be turned off. Firmware updates stay manual because Gen2+ has no documented auto-update switch.

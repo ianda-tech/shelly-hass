@@ -76,6 +76,44 @@ async def test_config_flow_stores_site_values_and_rejects_bad_timezone(hass) -> 
     assert entry.options[CONF_REQUIRE_ALLOWLIST] is True
 
 
+async def test_blank_timezone_is_accepted(hass) -> None:
+    hass.config.time_zone = "Europe/London"
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    assert result["step_id"] == "user"
+    payload = dict(USER)
+    payload[CONF_TIMEZONE] = ""
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], payload)
+    assert result["step_id"] == "behaviour"
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], BEHAVIOUR)
+    assert result["type"] == "create_entry"
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    assert entry.data[CONF_TIMEZONE] == ""
+
+
+async def test_options_can_clear_timezone(hass) -> None:
+    entry = _entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] == "menu"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "security"}
+    )
+    assert result["step_id"] == "security"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_DISABLE_CLOUD: True,
+            CONF_DISABLE_AP: True,
+            CONF_DISABLE_BLE_RPC: True,
+            "clear_timezone": True,
+        },
+    )
+    assert result["type"] == "create_entry"
+    assert entry.data[CONF_TIMEZONE] == ""
+
+
 async def test_setup_sensors_and_diagnostics_redact_secrets(hass) -> None:
     entry = _entry()
     entry.add_to_hass(hass)

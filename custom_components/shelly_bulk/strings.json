@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Site",
-        "description": "Enter the values for this Home Assistant instance. Nothing is pre-filled from the integration. This instance's timezone is {ha_timezone}; type the IANA name you want on the devices.",
+        "description": "Wi-Fi and the device password are entered here and are not shipped with the integration. Timezone is optional and is pre-filled from this Home Assistant instance ({ha_timezone}). Clear it to send no zone.",
         "data": {
           "site_name": "Site name",
           "wifi_ssid": "Wi-Fi SSID",
@@ -16,7 +16,7 @@
           "wifi_ssid": "2.4 GHz network. WPA3-only and 5 GHz-only networks will not join.",
           "wifi_password": "Stored on this config entry. It is not written to logs or diagnostics.",
           "fleet_password": "Optional. One admin password applied to each adopted device with Shelly.SetAuth. Leave blank to leave authentication off.",
-          "timezone": "IANA name such as the zone configured on Home Assistant. Required; there is no built-in zone."
+          "timezone": "Optional. An IANA tz database name, case-sensitive, Region/City, for example Australia/Melbourne, Australia/Sydney, or Europe/London. Abbreviations such as AEDT and offsets such as UTC+11 are not accepted. This sets the device clock zone for on-device schedules and sunrise/sunset. It matters more when Shelly Cloud is off, because the device will not auto-detect a zone. Leave it blank and no location.tz is sent."
         }
       },
       "behaviour": {
@@ -43,7 +43,7 @@
       }
     },
     "error": {
-      "invalid_timezone": "Enter a valid IANA timezone name."
+      "invalid_timezone": "Enter an IANA timezone name such as Australia/Melbourne, Australia/Sydney, or Europe/London. Abbreviations such as AEDT and offsets such as UTC+11 are not accepted."
     },
     "abort": {
       "already_configured": "This site name is already configured.",
@@ -76,10 +76,11 @@
       },
       "security": {
         "title": "Security and timezone",
-        "description": "Leave the password blank to keep the stored device password. Leave the timezone blank to keep the stored zone.",
+        "description": "Leave the password blank to keep the stored device password. Leave the timezone blank to keep the stored zone. Tick Clear timezone to store no zone, so location.tz is not sent. A new Region/City name replaces the stored zone.",
         "data": {
           "fleet_password": "Device password",
           "timezone": "Timezone",
+          "clear_timezone": "Clear timezone",
           "disable_cloud": "Disable Shelly Cloud",
           "disable_ap": "Disable the device access point",
           "disable_ble_rpc": "Disable Bluetooth RPC"
@@ -171,7 +172,7 @@
       }
     },
     "error": {
-      "invalid_timezone": "Enter a valid IANA timezone name.",
+      "invalid_timezone": "Enter an IANA timezone name such as Australia/Melbourne, Australia/Sydney, or Europe/London. Abbreviations such as AEDT and offsets such as UTC+11 are not accepted.",
       "invalid_brightness": "Set both minimum and maximum brightness, with minimum lower than maximum.",
       "invalid_night": "Night mode needs a start and end in HH:MM.",
       "not_found": "That file is not in the config directory.",

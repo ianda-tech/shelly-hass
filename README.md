@@ -81,7 +81,7 @@ Every value below is typed into **this** Home Assistant. The integration package
 1. Start the config flow. Give the entry a site name. That name is only a label.
 2. Enter the Wi-Fi SSID and password the new Shellies should join. They are stored in the config entry. Diagnostics and logs mask them.
 3. Optionally enter one device password. Leave it blank if these devices should stay without authentication. Shelly Bulk will not change a device that already has a password.
-4. Enter an IANA timezone, the same kind of name Home Assistant shows in its own settings. The field is empty on purpose. The description only tells you which zone this Home Assistant is using, so you can type it if that is the one you want.
+4. Timezone is optional. The box is pre-filled from this Home Assistant instance, the zone under **Settings → System → General**. It is not a value shipped with the integration. The format is an IANA tz database name, case-sensitive, `Region/City`. Examples: `Australia/Melbourne`, `Australia/Sydney`, `Europe/London`. Abbreviations such as `AEDT` and offsets such as `UTC+11` are rejected. The list is the TZ identifier column on [Wikipedia's tz database list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). It sets the device clock zone for on-device schedules and sunrise/sunset, which matters more when Shelly Cloud is off because the device will not auto-detect a zone. Leave it blank and adoption still works: no `location.tz` is sent. Change or clear it later under **Configure → Security and timezone**.
 5. On the next step, choose the generic behaviour:
    - **Disable Shelly Cloud** and **disable the access point** default to on.
    - **Disable Bluetooth RPC** defaults to on, which matches what core Shelly already did. Turn it off if you still need Bluetooth RPC after setup. The scanner proxy does not need RPC.
@@ -152,7 +152,7 @@ Open **Configure** and edit one section at a time.
 - **Cloud.** `Cloud.SetConfig` with `enable: false` when disable-cloud is on. Unchecking it leaves the cloud setting as the device has it.
 - **Access point.** Core Shelly turns the AP off after Bluetooth provisioning. Shelly Bulk sends your choice afterwards, so unchecking the box turns the AP back on.
 - **Bluetooth RPC.** Same pattern. `BLE.SetConfig` keeps Bluetooth **enabled** (`enable: true`) so the scanner still works, and sets `rpc.enable` from your checkbox.
-- **Name and timezone.** `Sys.SetConfig` `device.name` from the allowlist, and `location.tz` from the timezone you entered.
+- **Name and timezone.** `Sys.SetConfig` `device.name` from the allowlist. `location.tz` is sent only when a timezone is stored. The format is an IANA name such as `Australia/Melbourne` (see the [TZ identifier list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)). An empty timezone omits `location.tz`, so the device clock zone is left as it is.
 - **Scanner.** Core Shelly option `ble_scanner_mode`, set to active, auto, passive, or disabled.
 
 ### Inputs
@@ -426,7 +426,7 @@ pytest
 
 GitHub Actions runs hassfest, HACS validation, and pytest. Tests use Home Assistant's config-flow harness and a fake RPC session. They do not talk to hardware. If you change an RPC field, cite the Shelly component doc you checked (`https://shelly-api-docs.shelly.cloud/gen2/`) and say when a model refused it.
 
-Please don't add site defaults "to make the form easier". The config flow is supposed to be empty of SSID, password, timezone, and devices.
+Please don't add site defaults "to make the form easier". The config flow is supposed to be empty of SSID, password, and devices. Timezone may be suggested from the running Home Assistant instance. Examples such as `Australia/Melbourne` in the docs are format samples, not a default.
 
 ## Licence and credits
 
