@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- When Bluetooth setup has closed, **Scan for hotspots** lists Shelly setup access points the Supervisor can see, with signal. **Provision via hotspot** joins one access point on wlan0, sends the site Wi-Fi to `192.168.33.1`, and always puts wlan0 back. A batch runs one device at a time. Dry run reports the plan and does not join. This needs Home Assistant OS or Supervised and a Wi-Fi adapter. end0 must stay the connected primary interface with the default route. end0 is never changed.
+
 ## 0.3.0
 
 - Upgrade removes the extra devices left behind when companion devices were introduced. Before 0.2.6 those devices used `("shelly", <Shelly unique id or entry id>)` and had no name of their own, so Home Assistant showed the site name. The device that remains is `("shelly_bulk", "companion_<Shelly entry id>")`. Entities keep their entity id, a name you set, and a disabled state you set. A core Shelly device is not removed. A leftover device can also be deleted from the device page.

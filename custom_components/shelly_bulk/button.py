@@ -22,7 +22,24 @@ async def async_setup_entry(
         FindButton(runtime),
         ReloadDeviceListButton(runtime),
         RetryFailedButton(runtime),
+        ScanHotspotsButton(runtime),
+        ProvisionHotspotsButton(runtime),
+        DryRunHotspotsButton(runtime),
     ]
+    seen: set[str] = set()
+
+    def _add_hotspot_buttons(found: list[dict]) -> None:
+        fresh: list[ButtonEntity] = []
+        for item in found:
+            mac = str(item.get("sta_mac") or "")
+            if not mac or mac in seen:
+                continue
+            seen.add(mac)
+            fresh.append(HotspotProvisionButton(runtime, item))
+        if fresh:
+            async_add_entities(fresh)
+
+    runtime.add_hotspot_buttons = _add_hotspot_buttons
     for shelly_entry in hass.config_entries.async_entries(SHELLY_DOMAIN):
         entities.append(IdentifyButton(runtime, shelly_entry))
     async_add_entities(entities)
@@ -65,6 +82,61 @@ class RetryFailedButton(FleetEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         self.runtime.retry_failed()
+
+
+class ScanHotspotsButton(FleetEntity, ButtonEntity):
+    """List Shelly setup access points the Supervisor can see."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "scan_hotspots"
+
+    def __init__(self, runtime: FleetRuntime) -> None:
+        super().__init__(runtime, "scan_hotspots")
+
+    async def async_press(self) -> None:
+        await self.runtime.scan_hotspots()
+
+
+class ProvisionHotspotsButton(FleetEntity, ButtonEntity):
+    """Provision every setup AP from the last scan, one at a time."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "provision_hotspots"
+
+    def __init__(self, runtime: FleetRuntime) -> None:
+        super().__init__(runtime, "provision_hotspots")
+
+    async def async_press(self) -> None:
+        await self.runtime.provision_hotspots(all_found=True)
+
+
+class DryRunHotspotsButton(FleetEntity, ButtonEntity):
+    """Report the hotspot plan without joining an access point."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "dry_run_hotspots"
+
+    def __init__(self, runtime: FleetRuntime) -> None:
+        super().__init__(runtime, "dry_run_hotspots")
+
+    async def async_press(self) -> None:
+        await self.runtime.provision_hotspots(all_found=True, dry_run=True)
+
+
+class HotspotProvisionButton(FleetEntity, ButtonEntity):
+    """Join one Shelly setup AP, send the site Wi-Fi, and restore wlan0."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, runtime: FleetRuntime, item: dict) -> None:
+        super().__init__(runtime, f"hotspot_{item['sta_mac']}")
+        from .util import display_mac
+
+        self._mac = str(item["sta_mac"])
+        self._attr_name = f"Provision via hotspot {display_mac(self._mac)}"
+
+    async def async_press(self) -> None:
+        await self.runtime.provision_hotspots(mac=self._mac)
 
 
 class IdentifyButton(ButtonEntity):

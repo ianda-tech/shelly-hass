@@ -1,7 +1,7 @@
 {
   "domain": "shelly_bulk",
   "name": "Shelly Installer",
-  "after_dependencies": ["shelly", "bluetooth"],
+  "after_dependencies": ["shelly", "bluetooth", "hassio"],
   "categories": ["plugs_switches", "lighting"],
   "codeowners": ["@ianda-tech"],
   "config_flow": true,
@@ -10,5 +10,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/ianda-tech/shelly-hass/issues",
   "requirements": [],
-  "version": "0.3.0"
+  "version": "0.3.1"
 }
