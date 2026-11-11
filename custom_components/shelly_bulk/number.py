@@ -8,11 +8,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, SHELLY_DOMAIN
 from .device_settings import model_is_dimmer
 from .entity import shelly_device_info
 from .runtime import FleetRuntime
+
+PARALLEL_UPDATES = 1
 
 _SPECS = {
     "auto_off_delay": {"min": 0, "max": 86400, "step": 0.5, "dimmer_only": False},
@@ -38,16 +41,16 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class LiveNumber(NumberEntity):
-    """One numeric Shelly setting. The state is the value read back from the device."""
+class LiveNumber(CoordinatorEntity, NumberEntity):
+    """One numeric Shelly setting. The state is the value from the device coordinator."""
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_entity_registry_enabled_default = True
     _attr_has_entity_name = True
     _attr_mode = NumberMode.BOX
-    _attr_should_poll = True
 
     def __init__(self, runtime: FleetRuntime, shelly_entry: ConfigEntry, key: str, spec: dict) -> None:
+        super().__init__(runtime.device_coordinator(shelly_entry))
         self.runtime = runtime
         self._shelly_entry = shelly_entry
         self._key = key
@@ -57,32 +60,23 @@ class LiveNumber(NumberEntity):
         self._attr_native_max_value = spec["max"]
         self._attr_native_step = spec["step"]
         self._attr_device_info = shelly_device_info(runtime.hass, shelly_entry)
-        self._available = True
-        self._value: float | None = None
 
     @property
     def available(self) -> bool:
-        return self._available
+        return self._raw() is not None
 
     @property
     def native_value(self) -> float | None:
-        return self._value
+        raw = self._raw()
+        if raw is None:
+            return None
+        return float(raw)
 
-    async def async_added_to_hass(self) -> None:
-        await self.async_update()
-
-    async def async_update(self) -> None:
-        try:
-            value = await self.runtime.read_device_setting(self._shelly_entry, self._key)
-        except Exception:  # noqa: BLE001
-            self._available = False
-            return
-        if value is None:
-            self._available = False
-            self._value = None
-            return
-        self._available = True
-        self._value = float(value)
+    def _raw(self):
+        data = self.coordinator.data
+        if not data:
+            return None
+        return (data.get("settings") or {}).get(self._key)
 
     async def async_set_native_value(self, value: float) -> None:
         try:
@@ -90,8 +84,5 @@ class LiveNumber(NumberEntity):
         except Exception as err:  # noqa: BLE001
             raise HomeAssistantError(str(err)) from err
         if read_back is None:
-            self._available = False
             raise HomeAssistantError("The device did not accept this value")
-        self._value = float(read_back)
-        self._available = True
-        self.async_write_ha_state()
+        self.coordinator.patch_setting(self._key, read_back)

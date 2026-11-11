@@ -119,6 +119,7 @@ class FleetRuntime:
         self._rpc_limit = asyncio.Semaphore(3)
         self.hotspot_found: list[dict[str, Any]] = []
         self._hotspot_lock = asyncio.Lock()
+        self._device_coordinators: dict[str, Any] = {}
         _LOGGER.addFilter(self._log_filter)
 
     @property
@@ -907,6 +908,26 @@ class FleetRuntime:
                 )
         if ip:
             safe_device_update(dev_reg, device.id, configuration_url=f"http://{ip}")
+
+    def device_coordinator(self, shelly_entry: ConfigEntry):
+        """Return the single reader for one Shelly. Creating it does not connect."""
+        from .device_coordinator import ShellyDeviceCoordinator
+
+        coordinator = self._device_coordinators.get(shelly_entry.entry_id)
+        if coordinator is None:
+            coordinator = ShellyDeviceCoordinator(self, shelly_entry)
+            self._device_coordinators[shelly_entry.entry_id] = coordinator
+        return coordinator
+
+    def schedule_device_reads(self) -> None:
+        """Start the first device read without waiting for it."""
+        for coordinator in self._device_coordinators.values():
+            self.entry.async_create_background_task(
+                self.hass,
+                coordinator.async_refresh(),
+                name=f"{DOMAIN} read {coordinator.shelly_entry.entry_id}",
+                eager_start=True,
+            )
 
     async def refresh_network(self, entry: ConfigEntry) -> dict[str, Any]:
         """Read the live Wi-Fi address. Falls back to the host stored by core Shelly."""
@@ -1830,7 +1851,7 @@ class FleetRuntime:
                 bool(entry.data.get(CONF_VERIFY_SSL, False)),
                 attempts,
             )
-        except Exception:
+        except BaseException:
             self._rpc_limit.release()
             raise
         raw_shutdown = session.shutdown

@@ -117,6 +117,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
 
     ensure_companion_devices(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Device reads start after the entities exist and are not awaited.
+    # An offline Shelly must not hold setup open.
+    runtime.schedule_device_reads()
     entry.async_on_unload(entry.add_update_listener(_reload))
     _async_register_services(hass)
     return True

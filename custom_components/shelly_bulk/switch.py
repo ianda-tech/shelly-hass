@@ -6,6 +6,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import HomeAssistantError
@@ -14,6 +15,8 @@ from .advanced import SWITCH_SETTINGS
 from .const import CONF_PROVISIONING_MINUTES, DOMAIN, SHELLY_DOMAIN
 from .entity import FleetEntity, shelly_device_info
 from .runtime import FleetRuntime
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
@@ -101,43 +104,39 @@ class AutoAdoptSwitch(FleetEntity, SwitchEntity):
         self.async_write_ha_state()
 
 
-class AdvancedSwitch(SwitchEntity):
-    """One documented on/off setting for a single Shelly. Disabled until enabled."""
+class AdvancedSwitch(CoordinatorEntity, SwitchEntity):
+    """One documented on/off setting for a single Shelly.
+
+    The value comes from the device coordinator. Adding the entity does not
+    open a connection.
+    """
 
     _attr_entity_category = EntityCategory.CONFIG
     _attr_entity_registry_enabled_default = True
-    _attr_should_poll = False
     _attr_has_entity_name = True
 
     def __init__(self, runtime: FleetRuntime, shelly_entry: ConfigEntry, key: str) -> None:
+        super().__init__(runtime.device_coordinator(shelly_entry))
         self.runtime = runtime
         self._shelly_entry = shelly_entry
         self._key = key
         self._attr_unique_id = f"{shelly_entry.entry_id}_{key}"
         self._attr_translation_key = key
         self._attr_device_info = shelly_device_info(runtime.hass, shelly_entry)
-        self._available = True
-        self._is_on = False
 
     @property
     def available(self) -> bool:
-        return self._available
+        return self._setting() is not None
 
     @property
     def is_on(self) -> bool:
-        return self._is_on
+        return bool(self._setting())
 
-    async def async_added_to_hass(self) -> None:
-        await self._refresh()
-
-    async def _refresh(self) -> None:
-        try:
-            value = await self.runtime.read_device_setting(self._shelly_entry, self._key)
-        except Exception:  # noqa: BLE001
-            self._available = False
-            return
-        self._available = value is not None
-        self._is_on = bool(value)
+    def _setting(self):
+        data = self.coordinator.data
+        if not data:
+            return None
+        return (data.get("settings") or {}).get(self._key)
 
     async def async_turn_on(self, **kwargs) -> None:
         await self._write(True)
@@ -150,6 +149,4 @@ class AdvancedSwitch(SwitchEntity):
             read_back = await self.runtime.write_device_setting(self._shelly_entry, self._key, value)
         except Exception as err:  # noqa: BLE001
             raise HomeAssistantError(str(err)) from err
-        self._available = read_back is not None
-        self._is_on = bool(read_back)
-        self.async_write_ha_state()
+        self.coordinator.patch_setting(self._key, read_back)
