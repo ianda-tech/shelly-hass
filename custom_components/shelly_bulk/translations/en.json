@@ -391,6 +391,7 @@
     "button": {
       "find_shelly": {"name": "Find my Shelly"},
       "reload_device_list": {"name": "Reload device list"},
+      "retry_failed": {"name": "Retry failed"},
       "identify": {"name": "Identify"}
     },
     "number": {
@@ -533,6 +534,16 @@
     "stop_provisioning": {
       "name": "Stop provisioning",
       "description": "Turn provisioning mode off.",
+      "fields": {
+        "site": {
+          "name": "Site",
+          "description": "Shelly Bulk site name when more than one entry exists."
+        }
+      }
+    },
+    "retry_failed": {
+      "name": "Retry failed",
+      "description": "Clear the failed adoption list and try those devices again the next time they advertise.",
       "fields": {
         "site": {
           "name": "Site",

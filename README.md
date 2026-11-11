@@ -8,7 +8,7 @@
 [![Latest release](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fianda-tech%2Fshelly-hass%2Fmain%2Fcustom_components%2Fshelly_bulk%2Fmanifest.json&query=%24.version&prefix=v&label=Latest%20release&style=for-the-badge&color=2ea44f)](https://github.com/ianda-tech/shelly-hass/releases/latest)
 [![released](https://img.shields.io/github/release-date/ianda-tech/shelly-hass?label=released&style=for-the-badge)](https://github.com/ianda-tech/shelly-hass/releases/latest)
 
-**Current version: 0.2.8.** Bump this line in the same change as `version` in `custom_components/shelly_bulk/manifest.json`.
+**Current version: 0.2.9.** Bump this line in the same change as `version` in `custom_components/shelly_bulk/manifest.json`.
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![License: MIT](https://img.shields.io/github/license/ianda-tech/shelly-hass)](LICENSE)
@@ -359,7 +359,11 @@ data:
 action: shelly_bulk.stop_provisioning
 ```
 
-The switch and these actions are the same mode. It stays off across restarts.
+```yaml
+action: shelly_bulk.retry_failed
+```
+
+The switch and these actions are the same mode. It stays off across restarts. **Retry failed** clears the failed list. Those MACs are tried again the next time they advertise. It does not power-cycle anything.
 
 ### Import the allowlist
 
@@ -456,15 +460,16 @@ The Shelly Bulk device (one per config entry) exposes:
 - **Devices failed**
 - **Last error** (`none` when there has not been one)
 - **Provisioning mode**
+- **Retry failed**
 
-A device that is advertising with Bluetooth RPC off raises **Shelly setup window is closed**. Power-cycle it. The issue is removed if that MAC is later adopted.
+A device that is advertising with Bluetooth RPC off raises **Shelly setup window is closed**. Power-cycle that device. Press **Retry failed** after other failures; that does not ask you to power-cycle. The issue is removed if that MAC is later adopted.
 
 ## Troubleshooting
 
 | What you see | What it usually means |
 | --- | --- |
 | Last error says the allowlist is empty | Provisioning is armed and "only the allowlist" is on, but you have not imported a CSV. |
-| `flow aborted: ble_not_permitted` or the setup-window repair | The 15-minute (or 3-minute) window has closed, or Bluetooth writes are rejected. Power-cycle the device. |
+| `flow aborted: ble_not_permitted` or the setup-window repair | The device is advertising without Bluetooth RPC, or Bluetooth writes were rejected. Power-cycle it only in that case, then press **Retry failed**. |
 | `cannot_connect` | Nothing that can open GATT heard the device. A Shelly scanner is not enough on its own. Move a connectable proxy closer. |
 | Timed out waiting for Wi-Fi | Wrong SSID or password, 5 GHz or WPA3-only SSID, no DHCP, or mDNS not reaching Home Assistant. |
 | `skipped_auth` | The device already has a password, or the advertisement says authentication is on. Shelly Bulk did not send credentials and did not change it. Factory-reset if you meant to adopt it. |

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.const import CONF_HOST, CONF_PORT
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.shelly_bulk.advanced import write_setting
 from custom_components.shelly_bulk.const import DOMAIN

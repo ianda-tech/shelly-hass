@@ -7,7 +7,7 @@ from typing import Final
 DOMAIN: Final = "shelly_bulk"
 SHELLY_DOMAIN: Final = "shelly"
 MANUFACTURER: Final = "Innovate and Automate"
-VERSION: Final = "0.2.8"
+VERSION: Final = "0.2.9"
 
 # Home Assistant's Shelly flow uses these step ids (core dev, November 2026).
 STEP_BLUETOOTH_CONFIRM: Final = "bluetooth_confirm"
@@ -136,6 +136,7 @@ SERVICE_SECURE_DEVICES: Final = "secure_devices"
 SERVICE_AUDIT_SECURITY: Final = "audit_security"
 SERVICE_SET_ADVANCED: Final = "set_advanced"
 SERVICE_BULK_SET: Final = "bulk_set"
+SERVICE_RETRY_FAILED: Final = "retry_failed"
 
 SERVICES: Final = (
     SERVICE_APPLY_PROFILE,
@@ -149,4 +150,5 @@ SERVICES: Final = (
     SERVICE_AUDIT_SECURITY,
     SERVICE_SET_ADVANCED,
     SERVICE_BULK_SET,
+    SERVICE_RETRY_FAILED,
 )

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers import device_registry as dr
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.shelly_bulk.const import DOMAIN
+from custom_components.shelly_bulk.entity import device_by_identifier
 from custom_components.shelly_bulk.groups import (
     companion_device_name,
     RELAY_FIELDS,
@@ -177,7 +178,11 @@ async def test_mac_sensor_and_visit_link(hass, monkeypatch) -> None:
     assert "1pm_mini_gen3" in mac_states[0].entity_id
     assert "example_site" not in mac_states[0].entity_id
     assert mac_states[0].state == display_mac("48F6EEBA6EFC")
-    companion = registry.async_get_device(identifiers={("shelly_bulk", f"companion_{shelly.entry_id}")})
+    companion = device_by_identifier(
+        registry,
+        ("shelly_bulk", f"companion_{shelly.entry_id}"),
+        entry.entry_id,
+    )
     assert companion is not None
     assert companion.name == "1PM Mini Gen3 · 6EFC · 192.0.2.10"
     assert companion.connections == set()

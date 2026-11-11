@@ -135,6 +135,12 @@ stop_provisioning:
       selector:
         text:
 
+retry_failed:
+  fields:
+    site:
+      selector:
+        text:
+
 export_report:
   fields:
     site:

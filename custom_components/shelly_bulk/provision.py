@@ -45,6 +45,10 @@ _LOGGER = logging.getLogger(__name__)
 
 _PROGRESS_STEPS = {STEP_DO_PROVISION, STEP_PROVISION_DONE}
 _RETRY_STEPS = {STEP_PROVISION_FAILED, STEP_WIFI_SCAN_FAILED}
+POWER_CYCLE_HINT = (
+    "The device is advertising without Bluetooth RPC. "
+    "Power-cycle it to reopen the setup window."
+)
 
 
 class Provisioner:
@@ -61,8 +65,10 @@ class Provisioner:
         self._inflight: set[str] = set()
         self._done: set[str] = set()
         self._flows_tried: set[str] = set()
+        self._flow_mac: dict[str, str] = {}
         self._auth_macs: set[str] = set()
         self._warned: set[str] = set()
+        self._rpc_off: set[str] = set()
         self._unsub = None
 
     @property
@@ -229,6 +235,7 @@ class Provisioner:
         finally:
             self._inflight.discard(mac)
             self._flows_tried.add(flow_id)
+            self._flow_mac[flow_id] = mac
             self.runtime.notify()
 
     async def drive(self, flow_id: str, mac: str) -> None:
@@ -299,7 +306,7 @@ class Provisioner:
                 self.runtime.record(
                     mac,
                     "failed",
-                    "Provisioning failed after the configured retries. Power-cycle the device if its setup window closed.",
+                    "Provisioning failed after the configured retries.",
                 )
                 return
         if not entered:
@@ -367,6 +374,40 @@ class Provisioner:
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Could not abort Shelly flow %s: %s", flow_id, self.runtime.redact(str(err)))
 
+    def advertises_without_rpc(self, mac: str) -> bool:
+        """Return True when this MAC has advertised with Bluetooth RPC off."""
+        try:
+            plain = normalize_mac(mac)
+        except ValueError:
+            return False
+        return plain in self._rpc_off
+
+    def failure_text(self, mac: str, message: str) -> str:
+        """Add a power-cycle hint only when the device advertises without BLE RPC."""
+        if not message or not self.advertises_without_rpc(mac):
+            return message
+        if "power-cycle" in message.lower():
+            return message
+        text = message.rstrip()
+        joiner = " " if text.endswith(".") else ". "
+        return f"{text}{joiner}{POWER_CYCLE_HINT}"
+
+    def release_for_retry(self, macs: set[str]) -> None:
+        """Forget failed MACs so the next advertisement can provision them again."""
+        plain: set[str] = set()
+        for mac in macs:
+            try:
+                plain.add(normalize_mac(mac))
+            except ValueError:
+                continue
+        self._done -= plain
+        self._warned -= plain
+        self._inflight -= plain
+        drop = {flow_id for flow_id, seen in self._flow_mac.items() if seen in plain}
+        self._flows_tried -= drop
+        for flow_id in drop:
+            self._flow_mac.pop(flow_id, None)
+
     def note_advertisement(self, manufacturer_data: dict[int, bytes] | None, local_name: str = "") -> None:
         """Remember devices whose setup window is closed or that already have auth."""
         parsed = parse_shelly_manufacturer_data(manufacturer_data)
@@ -380,6 +421,10 @@ class Provisioner:
         if auth_enabled(flags):
             self._auth_macs.add(mac)
         self._hints[mac] = model_hint_from(parsed.get("model_id"), local_name)
+        if rpc_over_ble_enabled(flags):
+            self._rpc_off.discard(mac)
+        else:
+            self._rpc_off.add(mac)
         if rpc_over_ble_enabled(flags) or mac in self._done:
             return
         if self.runtime.shelly_entry_for(mac) is not None:
@@ -430,18 +475,13 @@ class Provisioner:
     @staticmethod
     def _abort_message(reason: str) -> str:
         messages = {
-            "ble_not_permitted": (
-                "The device refused Bluetooth setup. Power-cycle it to reopen the "
-                "15-minute window (about 3 minutes on a battery device)."
-            ),
+            "ble_not_permitted": "The device refused Bluetooth setup.",
             "cannot_connect": (
                 "Home Assistant could not open a Bluetooth connection. Shelly proxies "
                 "only forward advertisements; the device still needs a connectable adapter "
                 "or ESPHome proxy in range."
             ),
-            "invalid_discovery_info": (
-                "Bluetooth RPC is not available. Power-cycle the device if the setup window closed."
-            ),
+            "invalid_discovery_info": "Bluetooth RPC is not available.",
         }
         return messages.get(reason, f"Shelly discovery aborted ({reason}).")
 
