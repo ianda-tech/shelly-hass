@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+
+- `config/shelly_bulk/devices.csv` is created on setup and on load when it is missing. The new file is a header plus comments, with no real devices. An existing file is never overwritten. A header-only import is an empty list. Import defaults to that path. Reload device list, and a change to the file's modification time, merge the CSV without wiping names you already stored. Configure → Add device appends one MAC.
+- Find my Shelly scans Bluetooth advertisements from every Home Assistant scanner and proxy, appends new MACs (blank name and room, model hint set), and posts a notification with MAC, model, signal, and which scanner heard the device.
+- Auto-adopt nearby new Shellies defaults to on in setup and on the hub switch. Factory-new devices with no login and an open setup window are adopted even when they are not on the list, then written to the CSV with a placeholder name. Only provision the allowlist overrides auto-adopt while it is on. A neighbour's factory-new Shelly in range can be adopted when that override is off.
+- Identify toggles the first output for about 2 seconds. It is disabled by default on relays, plugs, and unknown models.
+
 ## 0.2.1
 
 - Timezone is optional. The config flow pre-fills Home Assistant's own zone (`Settings > System > General`) as a suggestion, read at runtime rather than shipped. Clear the field and no `location.tz` is sent. A filled value must be an IANA `Region/City` name, for example Australia/Melbourne. In options, leave the box blank to keep the stored zone, or tick Clear timezone to remove it.

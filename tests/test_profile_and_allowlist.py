@@ -31,7 +31,10 @@ def test_english_translations_match_strings() -> None:
     strings = json.loads((package / "strings.json").read_text(encoding="utf-8"))
     english = json.loads((package / "translations" / "en.json").read_text(encoding="utf-8"))
     assert english == strings
+    from custom_components.shelly_bulk.const import OPTIONS_MENU
+
     menu = strings["options"]["step"]["init"]["menu_options"]
+    assert tuple(menu) == OPTIONS_MENU
     for option, label in menu.items():
         assert str(label).strip(), option
 

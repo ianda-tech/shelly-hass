@@ -85,11 +85,12 @@ Every value below is typed into **this** Home Assistant. The integration package
 5. On the next step, choose the generic behaviour:
    - **Disable Shelly Cloud** and **disable the access point** default to on.
    - **Disable Bluetooth RPC** defaults to on, which matches what core Shelly already did. Turn it off if you still need Bluetooth RPC after setup. The scanner proxy does not need RPC.
-   - **Only provision devices in the allowlist** defaults to on. Leave it on. Turning it off adopts every factory-new Shelly any proxy can hear.
+   - **Auto-adopt nearby new Shellies** defaults to on. It adopts a factory-new Shelly (no login, setup window open) even when that MAC is not on the list.
+   - **Only provision devices in the allowlist** defaults to on, and it overrides auto-adopt. While it is on, devices that are not on the list are left alone. Turn it off only if you want every factory-new Shelly in range. That includes a neighbour's new Shelly.
    - **Bluetooth scanner mode** defaults to **Active**, which is what you want while commissioning. **Auto** (on recent Home Assistant) uses less airtime later. **Passive** and **Disabled** are there when you are done.
    - Concurrency, retries, and how long provisioning mode stays armed.
 
-You can change all of this later under **Configure** on the integration card: Wi-Fi, security, input profile, output profile, dimmer profile, provisioning, and allowlist import.
+You can change all of this later under **Configure** on the integration card: Wi-Fi, security, input profile, output profile, dimmer profile, provisioning, allowlist import, and add device. The hub device also has **Auto-adopt nearby new Shellies**, **Find my Shelly**, and **Reload device list**.
 
 ## Device login (auth)
 
@@ -110,16 +111,37 @@ The **Security audit** sensor stays `not_audited` until you run **Audit security
 | You change the password in Configure | The new value is stored for the next device that still has no login. Devices that already have a password are not re-keyed. |
 | The password is lost | Factory-reset the Shelly. Shelly Bulk will not guess, and it will not overwrite a device that already has a login. |
 
-### Device list
+## Device list
 
-Put a CSV somewhere under the Home Assistant config directory, for example `config/shelly_bulk/devices.csv`. Then either:
+On setup, and every time Shelly Bulk loads, it creates `config/shelly_bulk/devices.csv` if that file is missing. The new file is a header (`mac,name,room,model_hint,input,initial_state,fade_rate,transition`) plus comment lines. There is no real device data. An existing file is never overwritten. Lines that start with `#` are ignored, so a header with no devices imports as an empty list, not an error.
 
-- **Settings → Devices & services → Shelly Bulk → Configure → Import allowlist**, and enter `shelly_bulk/devices.csv`, or
-- call the `shelly_bulk.import_allowlist` service with that filename.
-
-The file is read once and stored in Home Assistant's `.storage`. It is not part of this repository, and Shelly Bulk will not follow a path that escapes the config directory. Import again when the list changes.
+Edit it with the File editor, Samba, or the Studio Code Server add-on. **Reload device list** reads it again. Shelly Bulk also re-reads when the file's modification time changes. A blank name or room cell does not wipe a name you already stored. Rows that are missing from the file are not deleted on reload. **Configure → Import allowlist** and `shelly_bulk.import_allowlist` default to `shelly_bulk/devices.csv`. **Configure → Add device** appends one MAC, name, and room.
 
 While "only provision the allowlist" is on, an empty list adopts nothing. The last-error sensor says so.
+
+## Find my Shelly
+
+**Find my Shelly** on the Shelly Bulk device asks every Home Assistant Bluetooth scanner and proxy for Shelly advertisements. A MAC that is not already added, and not already on the device list, is appended. The name and room are left blank and `model_hint` is filled in. Rows you have edited are not rewritten, and a MAC is not added twice. Devices that already have a login are skipped.
+
+A persistent notification lists each new device: MAC, model, RSSI, and which scanner heard it.
+
+When **Auto-adopt nearby new Shellies** is effectively on (the switch is on, and Only provision the allowlist is off), Find my Shelly also starts an adoption pass immediately. When auto-adopt is off, or the allowlist option overrides it, Find my Shelly only adds the rows.
+
+A device that is advertising with Bluetooth RPC off raises the setup-window repair. Power-cycle it. Shelly Bulk does not guess a password.
+
+## Auto-adopt nearby new Shellies
+
+The switch is on the Shelly Bulk device and the same choice is in the setup form. It defaults to on.
+
+When it is on and **Only provision the allowlist** is off, a factory-default Shelly (no login, setup window still open) is adopted with the full flow: Wi-Fi, security, device login password, timezone, and any channel profile you enabled. It does not have to be on the list. After adoption it is appended to `devices.csv` with a placeholder name (model plus the last 4 characters of the MAC) and a blank room. A notification asks you to rename it.
+
+Devices that already have a login, and devices already added in Home Assistant, are not touched. Concurrency still limits how many run at once. A locked device (setup window closed) raises a repair instead of being retried.
+
+**Only provision the allowlist overrides auto-adopt.** While that option is on, auto-adopt does not take a device that is not on the list. The switch stays on and its status says it is paused. Turn the allowlist option off and a neighbour's factory-new Shelly in Bluetooth range can be adopted.
+
+## Identify
+
+Each adopted Shelly gets an **Identify** button. Pressing it toggles the first output for about 2 seconds (`Switch.Set` with `toggle_after`, or the same shape on a light). The button is disabled by default on relays, plugs, and unknown models, because a toggle can energise a connected load. Light-like models (dimmer, bulb, RGB, strip) are enabled by default. Enable the button on the device page only when you are sure a short toggle is safe.
 
 ## Bulk add
 

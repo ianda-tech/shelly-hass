@@ -14,6 +14,7 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import (
     CONF_PROVISIONING_MINUTES,
+    DEVICE_LIST_RELATIVE,
     DOMAIN,
     SERVICE_APPLY_PROFILE,
     SERVICE_EXPORT_REPORT,
@@ -29,7 +30,7 @@ from .const import (
 from .runtime import FleetRuntime
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS = [Platform.BUTTON, Platform.SELECT, Platform.SENSOR, Platform.SWITCH]
 
 CONFIG_ENTRY = ConfigEntry[FleetRuntime]
 
@@ -190,7 +191,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 vol.Optional("site"): cv.string,
-                vol.Required("filename"): cv.string,
+                vol.Optional("filename", default=DEVICE_LIST_RELATIVE): cv.string,
                 vol.Optional("replace", default=True): cv.boolean,
             },
             extra=vol.ALLOW_EXTRA,
@@ -399,7 +400,7 @@ async def _set_advanced(call: ServiceCall) -> dict[str, Any] | None:
 
 async def _import(call: ServiceCall) -> dict[str, int] | None:
     count = await _runtime(call.hass, call).async_import_allowlist(
-        str(call.data["filename"]),
+        str(call.data.get("filename") or DEVICE_LIST_RELATIVE),
         replace=bool(call.data.get("replace", True)),
     )
     if call.return_response:

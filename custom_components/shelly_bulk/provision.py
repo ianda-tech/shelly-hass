@@ -19,6 +19,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import UnknownFlow
 
 from .ble import auth_enabled, parse_shelly_manufacturer_data, rpc_over_ble_enabled
+from .discover import model_hint_from
 from .const import (
     CONF_CONCURRENCY,
     CONF_RETRIES,
@@ -52,7 +53,9 @@ class Provisioner:
     def __init__(self, runtime: Any) -> None:
         self.runtime = runtime
         self.active = False
-        self.deadline = 0.0
+        self.deadline: float | None = None
+        self._continuous = False
+        self._hints: dict[str, str] = {}
         self._task: asyncio.Task | None = None
         self._sem = asyncio.Semaphore(2)
         self._inflight: set[str] = set()
@@ -73,10 +76,22 @@ class Provisioner:
     def _now(self) -> float:
         return time.monotonic()
 
-    async def start(self, minutes: float) -> None:
-        """Arm adoption for ``minutes``. Restarting refreshes the deadline."""
+    @property
+    def timed_running(self) -> bool:
+        """True only during the timed provisioning window, not auto-adopt."""
+        return bool(self.active and self.deadline is not None and self._now() < self.deadline)
+
+    def _session_open(self) -> bool:
+        timed = self.deadline is not None and self._now() < self.deadline
+        return bool(self._continuous or timed)
+
+    async def start(self, minutes: float | None = None, *, continuous: bool = False) -> None:
+        """Arm adoption. ``minutes`` is the timed window. ``continuous`` is auto-adopt."""
         self.active = True
-        self.deadline = self._now() + minutes * 60
+        if continuous:
+            self._continuous = True
+        if minutes is not None:
+            self.deadline = self._now() + float(minutes) * 60
         concurrency = int(self.runtime.entry.options.get(CONF_CONCURRENCY, 2) or 2)
         self._sem = asyncio.Semaphore(max(1, min(concurrency, 5)))
         self._register_bluetooth()
@@ -86,14 +101,16 @@ class Provisioner:
             )
         self.runtime.notify()
         _LOGGER.info(
-            "Provisioning mode on for %s minutes (allowlist %s)",
-            minutes,
+            "Provisioning %s (allowlist %s)",
+            "auto-adopt" if continuous and minutes is None else f"on for {minutes} minutes",
             "required" if self.runtime.require_allowlist else "optional",
         )
 
     async def stop(self, reason: str = "stopped") -> None:
         """Disarm adoption and cancel in-flight waits."""
         self.active = False
+        self._continuous = False
+        self.deadline = None
         self._unregister_bluetooth()
         task = self._task
         self._task = None
@@ -107,22 +124,48 @@ class Provisioner:
         self.runtime.notify()
         _LOGGER.info("Provisioning mode off (%s)", reason)
 
+    async def stop_timed(self) -> None:
+        """End the timed window. Auto-adopt keeps running when it is on."""
+        self.deadline = None
+        if self._continuous and self.active:
+            self.runtime.notify()
+            return
+        await self.stop("stopped")
+
+    async def stop_continuous(self) -> None:
+        """Stop auto-adopt. A timed provisioning window keeps running."""
+        self._continuous = False
+        if self.timed_running:
+            self.runtime.notify()
+            return
+        await self.stop("auto-adopt off")
+
     async def _run(self) -> None:
         try:
-            while self.active and self._now() < self.deadline:
+            while self.active and self._session_open():
+                if self.deadline is not None and self._now() >= self.deadline:
+                    self.deadline = None
+                    self.runtime.notify()
+                    if not self._continuous:
+                        break
                 await self.scan_once()
-                remaining = self.deadline - self._now()
-                if remaining <= 0:
-                    break
-                await asyncio.sleep(min(POLL_INTERVAL_SECONDS, remaining))
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
         except asyncio.CancelledError:
             raise
         except Exception as err:  # noqa: BLE001
             self.runtime.set_last_error(f"Provisioning stopped: {self.runtime.redact(str(err))}")
             _LOGGER.exception("Provisioning loop failed")
         finally:
-            timed_out = self.active and self._now() >= self.deadline
+            now = self._now()
+            timed_out = (
+                self.active
+                and not self._continuous
+                and self.deadline is not None
+                and now >= self.deadline
+            )
             self.active = False
+            self._continuous = False
+            self.deadline = None
             self._unregister_bluetooth()
             self.runtime.notify()
             if timed_out:
@@ -134,9 +177,10 @@ class Provisioner:
             return
         if self.runtime.require_allowlist and not self.runtime.allowlist.devices:
             self.runtime.set_last_error(
-                "Provisioning is armed but the allowlist is empty. "
-                "Import a CSV from your config directory, or turn off "
-                "'only provision the allowlist' if you intend to adopt every new Shelly."
+                "Provisioning is armed but the device list is empty. "
+                "Edit shelly_bulk/devices.csv, or turn off "
+                "'only provision the allowlist'. While that option is on, auto-adopt "
+                "does not take devices that are not on the list."
             )
             return
         try:
@@ -260,6 +304,13 @@ class Provisioner:
                 return
         if not entered:
             return
+        if mac not in self.runtime.allowlist:
+            try:
+                await self.runtime.note_new_device(
+                    mac, model_hint=self._hints.get(mac, ""), placeholder=True
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("Could not record %s on the device list: %s", mac, err)
         await self.runtime.finish_adopted_device(mac)
         # A failed MAC can be tried again when a new discovery flow appears
         # (for example after a power cycle). A MAC that was adopted or skipped
@@ -328,6 +379,7 @@ class Provisioner:
         flags = int(parsed.get("flags") or 0)
         if auth_enabled(flags):
             self._auth_macs.add(mac)
+        self._hints[mac] = model_hint_from(parsed.get("model_id"), local_name)
         if rpc_over_ble_enabled(flags) or mac in self._done:
             return
         if self.runtime.shelly_entry_for(mac) is not None:

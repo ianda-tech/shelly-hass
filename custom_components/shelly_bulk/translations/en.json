@@ -21,12 +21,13 @@
       },
       "behaviour": {
         "title": "Provisioning behaviour",
-        "description": "These are generic choices, not a site profile. Home Assistant's Shelly flow always turns the access point and Bluetooth RPC off after Wi-Fi provisioning. Uncheck those boxes to turn them back on afterwards. The Bluetooth scanner is separate and stays available for the proxy.",
+        "description": "These are generic choices, not a site profile. Home Assistant's Shelly flow always turns the access point and Bluetooth RPC off after Wi-Fi provisioning. Uncheck those boxes to turn them back on afterwards. The Bluetooth scanner is separate and stays available for the proxy. Auto-adopt nearby new Shellies is on by default. It does nothing while Only provision devices in the allowlist is on. Turn that option off to adopt every factory-new Shelly in range, including a neighbour's.",
         "data": {
           "disable_cloud": "Disable Shelly Cloud",
           "disable_ap": "Disable the device access point",
           "disable_ble_rpc": "Disable Bluetooth RPC",
           "update_firmware": "Update to stable firmware after adoption",
+          "auto_adopt": "Auto-adopt nearby new Shellies",
           "require_allowlist": "Only provision devices in the allowlist",
           "ble_scanner_mode": "Bluetooth scanner mode on each adopted Shelly",
           "concurrency": "Devices to provision at once",
@@ -35,7 +36,8 @@
         },
         "data_description": {
           "disable_ble_rpc": "Bluetooth RPC is the setup channel. The advertisement proxy keeps working with RPC off.",
-          "require_allowlist": "Leave this on unless you intend to adopt every factory-new Shelly that any proxy can hear.",
+          "auto_adopt": "On, and with Only provision the allowlist off, a factory-new Shelly with no login and an open setup window is adopted even if it is not on the list.",
+          "require_allowlist": "While this is on, auto-adopt leaves devices that are not on the list alone. Turn it off only to adopt every factory-new Shelly in range, including a neighbour's.",
           "ble_scanner_mode": "Active asks nearby devices for full advertisements. Shelly proxies cannot open GATT connections.",
           "concurrency": "Keep this within the free connection slots of your connectable Bluetooth proxies. 2 is a safe start.",
           "provisioning_minutes": "How long the provisioning switch stays on. This is not the device's 15-minute setup window."
@@ -63,7 +65,8 @@
           "outputs": "Output profile",
           "dimmers": "Dimmer profile",
           "provisioning": "Provisioning",
-          "allowlist": "Import allowlist"
+          "allowlist": "Import allowlist",
+          "add_device": "Add device"
         }
       },
       "wifi": {
@@ -158,8 +161,10 @@
       },
       "provisioning": {
         "title": "Provisioning",
+        "description": "Auto-adopt is ignored while Only provision the allowlist is on. With the allowlist option off, a factory-new Shelly in range can be adopted, including a neighbour's.",
         "data": {
           "update_firmware": "Update to stable firmware after adoption",
+          "auto_adopt": "Auto-adopt nearby new Shellies",
           "require_allowlist": "Only provision devices in the allowlist",
           "ble_scanner_mode": "Bluetooth scanner mode on each adopted Shelly",
           "concurrency": "Devices to provision at once",
@@ -169,10 +174,24 @@
       },
       "allowlist": {
         "title": "Import allowlist",
-        "description": "Path of a CSV you placed in this Home Assistant config directory, for example shelly_bulk/devices.csv. The file is read once and stored in this instance. It is not part of the integration.",
+        "description": "shelly_bulk/devices.csv is created on setup when it is missing, and an existing file is never overwritten. A header with no devices imports an empty list. Replace swaps the stored list. Leave replace off to merge.",
         "data": {
           "filename": "File in the config directory",
           "replace": "Replace the current allowlist"
+        }
+      },
+      "add_device": {
+        "title": "Add device",
+        "description": "Appends one Shelly to shelly_bulk/devices.csv and the allowlist. A MAC that is already listed is left as you edited it.",
+        "data": {
+          "mac": "MAC address",
+          "name": "Name",
+          "room": "Room"
+        },
+        "data_description": {
+          "mac": "12 hex digits, with or without colons.",
+          "name": "Optional. Leave blank and fill it in later.",
+          "room": "Optional Home Assistant area name."
         }
       }
     },
@@ -182,7 +201,9 @@
       "invalid_night": "Night mode needs a start and end in HH:MM.",
       "not_found": "That file is not in the config directory.",
       "invalid_csv": "The CSV could not be read. It needs a mac column.",
-      "outside_config": "The path must stay inside the Home Assistant config directory."
+      "outside_config": "The path must stay inside the Home Assistant config directory.",
+      "invalid_mac": "Enter a 12-digit MAC address.",
+      "already_listed": "That MAC is already on the device list. Edit the CSV to change its name or room."
     },
     "abort": {
       "allowlist_imported": "Imported {count} devices into this Home Assistant instance.",
@@ -234,7 +255,13 @@
       "mqtt": {"name": "MQTT"},
       "eco_mode": {"name": "Eco mode"},
       "status_led": {"name": "Status LED"},
-      "debug_logging": {"name": "Debug logging"}
+      "debug_logging": {"name": "Debug logging"},
+      "auto_adopt": {"name": "Auto-adopt nearby new Shellies"}
+    },
+    "button": {
+      "find_shelly": {"name": "Find my Shelly"},
+      "reload_device_list": {"name": "Reload device list"},
+      "identify": {"name": "Identify"}
     }
   },
   "issues": {
@@ -402,7 +429,7 @@
         },
         "filename": {
           "name": "Filename",
-          "description": "Path relative to the config directory, such as shelly_bulk/devices.csv."
+          "description": "Path relative to the config directory. Defaults to shelly_bulk/devices.csv, which is created if missing. A header with no devices imports an empty list."
         },
         "replace": {
           "name": "Replace",

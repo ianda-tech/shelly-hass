@@ -32,6 +32,7 @@ from .const import (
     CONF_APPLY_DIMMER_PROFILE,
     CONF_APPLY_INPUT_PROFILE,
     CONF_APPLY_OUTPUT_PROFILE,
+    CONF_AUTO_ADOPT,
     CONF_AUTO_OFF,
     CONF_AUTO_OFF_DELAY,
     CONF_AUTO_ON,
@@ -66,10 +67,12 @@ from .const import (
     CONF_UPDATE_FIRMWARE,
     CONF_WIFI_PASSWORD,
     CONF_WIFI_SSID,
+    DEVICE_LIST_RELATIVE,
     DOMAIN,
+    OPTIONS_MENU,
     UNCHANGED,
 )
-from .util import as_int, slugify, valid_hhmm
+from .util import as_int, normalize_mac, slugify, valid_hhmm
 
 _PASSWORD = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
@@ -95,6 +98,7 @@ _BEHAVIOUR_SCHEMA = vol.Schema(
         vol.Required(CONF_DISABLE_AP, default=True): BooleanSelector(),
         vol.Required(CONF_DISABLE_BLE_RPC, default=True): BooleanSelector(),
         vol.Required(CONF_UPDATE_FIRMWARE, default=False): BooleanSelector(),
+        vol.Required(CONF_AUTO_ADOPT, default=True): BooleanSelector(),
         vol.Required(CONF_REQUIRE_ALLOWLIST, default=True): BooleanSelector(),
         vol.Required(CONF_BLE_SCANNER_MODE, default="active"): _choice(
             [
@@ -120,6 +124,7 @@ def _behaviour_options(user_input: dict[str, Any]) -> dict[str, Any]:
         CONF_DISABLE_AP: bool(user_input[CONF_DISABLE_AP]),
         CONF_DISABLE_BLE_RPC: bool(user_input[CONF_DISABLE_BLE_RPC]),
         CONF_UPDATE_FIRMWARE: bool(user_input[CONF_UPDATE_FIRMWARE]),
+        CONF_AUTO_ADOPT: bool(user_input.get(CONF_AUTO_ADOPT, True)),
         CONF_REQUIRE_ALLOWLIST: bool(user_input[CONF_REQUIRE_ALLOWLIST]),
         CONF_BLE_SCANNER_MODE: mode,
         CONF_CONCURRENCY: int(user_input[CONF_CONCURRENCY]),
@@ -196,16 +201,7 @@ class ShellyBulkOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=[
-                "wifi",
-                "security",
-                "secure",
-                "inputs",
-                "outputs",
-                "dimmers",
-                "provisioning",
-                "allowlist",
-            ],
+            menu_options=list(OPTIONS_MENU),
         )
 
     async def async_step_wifi(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -438,6 +434,7 @@ class ShellyBulkOptionsFlow(OptionsFlow):
         if user_input is not None:
             updated = dict(options)
             updated[CONF_UPDATE_FIRMWARE] = bool(user_input[CONF_UPDATE_FIRMWARE])
+            updated[CONF_AUTO_ADOPT] = bool(user_input[CONF_AUTO_ADOPT])
             updated[CONF_REQUIRE_ALLOWLIST] = bool(user_input[CONF_REQUIRE_ALLOWLIST])
             mode = user_input[CONF_BLE_SCANNER_MODE]
             updated[CONF_BLE_SCANNER_MODE] = mode if mode in BLE_SCANNER_MODES else "active"
@@ -451,6 +448,9 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_UPDATE_FIRMWARE, default=bool(options.get(CONF_UPDATE_FIRMWARE, False))
+                    ): BooleanSelector(),
+                    vol.Required(
+                        CONF_AUTO_ADOPT, default=bool(options.get(CONF_AUTO_ADOPT, True))
                     ): BooleanSelector(),
                     vol.Required(
                         CONF_REQUIRE_ALLOWLIST, default=bool(options.get(CONF_REQUIRE_ALLOWLIST, True))
@@ -516,10 +516,44 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                 )
         return self.async_show_form(
             step_id="allowlist",
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required("filename", default=DEVICE_LIST_RELATIVE): TextSelector(),
+                        vol.Required("replace", default=True): BooleanSelector(),
+                    }
+                ),
+                {"filename": DEVICE_LIST_RELATIVE},
+            ),
+            errors=errors,
+        )
+
+    async def async_step_add_device(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Append one MAC to the device list without rewriting existing rows."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            runtime = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+            if runtime is None:
+                return self.async_abort(reason="not_loaded")
+            try:
+                mac = normalize_mac(str(user_input.get("mac") or ""))
+            except ValueError:
+                errors["mac"] = "invalid_mac"
+            else:
+                added = await runtime.add_listed_device(
+                    mac, str(user_input.get("name") or ""), str(user_input.get("room") or "")
+                )
+                if not added:
+                    errors["mac"] = "already_listed"
+                else:
+                    return self.async_create_entry(data=dict(self.config_entry.options))
+        return self.async_show_form(
+            step_id="add_device",
             data_schema=vol.Schema(
                 {
-                    vol.Required("filename"): TextSelector(),
-                    vol.Required("replace", default=True): BooleanSelector(),
+                    vol.Required("mac"): TextSelector(),
+                    vol.Optional("name", default=""): TextSelector(),
+                    vol.Optional("room", default=""): TextSelector(),
                 }
             ),
             errors=errors,

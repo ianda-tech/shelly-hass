@@ -7,7 +7,7 @@ from typing import Final
 DOMAIN: Final = "shelly_bulk"
 SHELLY_DOMAIN: Final = "shelly"
 MANUFACTURER: Final = "Innovate and Automate"
-VERSION: Final = "0.2.1"
+VERSION: Final = "0.2.2"
 
 # Home Assistant's Shelly flow uses these step ids (core dev, November 2026).
 STEP_BLUETOOTH_CONFIRM: Final = "bluetooth_confirm"
@@ -36,6 +36,7 @@ CONF_DISABLE_AP: Final = "disable_ap"
 CONF_DISABLE_BLE_RPC: Final = "disable_ble_rpc"
 CONF_UPDATE_FIRMWARE: Final = "update_firmware"
 CONF_REQUIRE_ALLOWLIST: Final = "require_allowlist"
+CONF_AUTO_ADOPT: Final = "auto_adopt"
 CONF_CONCURRENCY: Final = "concurrency"
 CONF_RETRIES: Final = "retries"
 CONF_PROVISIONING_MINUTES: Final = "provisioning_minutes"
@@ -71,6 +72,19 @@ UNCHANGED: Final = "unchanged"
 ALLTERCO_MFID: Final = 0x0BA9
 FLAG_AUTH_ENABLED: Final = 1 << 1
 FLAG_RPC_OVER_BLE: Final = 1 << 2
+
+DEVICE_LIST_RELATIVE: Final = "shelly_bulk/devices.csv"
+OPTIONS_MENU: Final = (
+    "wifi",
+    "security",
+    "secure",
+    "inputs",
+    "outputs",
+    "dimmers",
+    "provisioning",
+    "allowlist",
+    "add_device",
+)
 
 POLL_INTERVAL_SECONDS: Final = 3.0
 PROVISION_WAIT_SECONDS: Final = 90.0

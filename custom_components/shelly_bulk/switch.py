@@ -22,7 +22,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     runtime: FleetRuntime = hass.data[DOMAIN][entry.entry_id]
-    entities: list[SwitchEntity] = [ProvisioningSwitch(runtime)]
+    entities: list[SwitchEntity] = [ProvisioningSwitch(runtime), AutoAdoptSwitch(runtime)]
     for shelly_entry in hass.config_entries.async_entries(SHELLY_DOMAIN):
         entities.extend(advanced_switches(runtime, shelly_entry))
     async_add_entities(entities)
@@ -56,6 +56,48 @@ class ProvisioningSwitch(FleetEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         await self.runtime.stop_provisioning()
+        self.async_write_ha_state()
+
+
+class AutoAdoptSwitch(FleetEntity, SwitchEntity):
+    """Adopt factory-new Shellies that are not on the device list.
+
+    Only provision the allowlist overrides this switch while that option is on.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "auto_adopt"
+
+    def __init__(self, runtime: FleetRuntime) -> None:
+        super().__init__(runtime, "auto_adopt")
+
+    @property
+    def is_on(self) -> bool:
+        return self.runtime.auto_adopt
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        if self.runtime.auto_adopt and self.runtime.require_allowlist:
+            return {
+                "status": (
+                    "Paused. Only provision the allowlist is on, so devices that "
+                    "are not on the list are left alone."
+                )
+            }
+        if self.runtime.effective_auto_adopt:
+            return {
+                "status": (
+                    "On. A factory-new Shelly in range can be adopted, including a neighbour's."
+                )
+            }
+        return {"status": "Off. Find my Shelly only adds devices to the list."}
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self.runtime.set_auto_adopt(True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self.runtime.set_auto_adopt(False)
         self.async_write_ha_state()
 
 

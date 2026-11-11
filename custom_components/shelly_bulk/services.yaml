@@ -343,7 +343,7 @@ import_allowlist:
       selector:
         text:
     filename:
-      required: true
+      default: "shelly_bulk/devices.csv"
       selector:
         text:
     replace:

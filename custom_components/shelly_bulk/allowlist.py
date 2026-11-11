@@ -7,7 +7,7 @@ import io
 from pathlib import Path
 from typing import Any
 
-from .models import AllowDevice, Allowlist, ChannelSettings
+from .models import AllowDevice, Allowlist, ChannelSettings, merge_channel
 from .util import normalize_mac, parse_bool, parse_number
 
 # A single "input" cell can carry the installer's shorthand.
@@ -118,11 +118,39 @@ def _normalise_row(raw: dict[str, Any]) -> dict[str, str]:
     return row
 
 
+def without_csv_comments(text: str) -> str:
+    """Drop lines whose first non-space character is #. Those are notes, not rows."""
+    kept = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+    if text.endswith("\n"):
+        return "\n".join(kept) + "\n"
+    return "\n".join(kept)
+
+
+def merge_allowlist(base: Allowlist, incoming: Allowlist) -> None:
+    """Merge rows. A blank incoming cell does not wipe a stored name, room, or hint."""
+    for mac, device in incoming.devices.items():
+        current = base.devices.get(mac)
+        if current is None:
+            base.devices[mac] = device
+            continue
+        if device.name:
+            current.name = device.name
+        if device.room:
+            current.room = device.room
+        if device.model_hint:
+            current.model_hint = device.model_hint
+        current.all_channels = merge_channel(current.all_channels, device.all_channels)
+        for index, settings in device.by_channel.items():
+            current.by_channel[index] = merge_channel(
+                current.by_channel.get(index, ChannelSettings()), settings
+            )
+
+
 def parse_allowlist_csv(text: str) -> tuple[Allowlist, list[str]]:
     """Parse CSV text into an allowlist. Returns human-readable row errors."""
     allowlist = Allowlist()
     errors: list[str] = []
-    reader = csv.DictReader(io.StringIO(text))
+    reader = csv.DictReader(io.StringIO(without_csv_comments(text)))
     if not reader.fieldnames or not any(
         (name or "").strip().lower().replace(" ", "_") in {"mac", "mac_address", "macaddress"}
         for name in reader.fieldnames
