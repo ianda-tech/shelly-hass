@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.5
+
+- Configure → Bulk change settings picks devices by group: all, one model, one room (including no room), unnamed devices, or a short individual list. A confirmation says how many devices will change and lists each MAC and IP. Only ticked settings are sent, in the background, five at a time, with a timeout and a read-back. Progress is a notification and a report row per device.
+- Copy settings to other devices uses the same group selector and also runs in the background.
+- Labels use the Home Assistant name, or the model plus the last four characters of the MAC, plus the room and IP. The default Shelly hostname is not shown.
+- Each core Shelly has MAC address and IP address sensors. The MAC is stored on the device, and Visit opens `http://<ip>`. The IP is read from the device when it answers and falls back to the host stored by core Shelly. `shelly_bulk.bulk_set` is the service form of the same change.
+
 ## 0.2.4
 
 - Power-on state and input behaviour are sent together in one `Switch.SetConfig`. `follow` sets `match_input`. Leaving `follow` while power-on is `match_input` sets `restore_last`. A switch is not offered `toggle` or display labels. The selects refresh after a rejected change so the UI shows the value the device kept.

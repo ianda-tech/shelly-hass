@@ -23,6 +23,7 @@ from .const import (
     SERVICE_SET_INPUT_MODE,
     SERVICE_SECURE_DEVICES,
     SERVICE_AUDIT_SECURITY,
+    SERVICE_BULK_SET,
     SERVICE_SET_ADVANCED,
     SERVICE_START_PROVISIONING,
     SERVICE_STOP_PROVISIONING,
@@ -88,6 +89,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
             SERVICE_SECURE_DEVICES,
             SERVICE_AUDIT_SECURITY,
             SERVICE_SET_ADVANCED,
+            SERVICE_BULK_SET,
         ):
             hass.services.async_remove(DOMAIN, service)
     return unloaded
@@ -179,6 +181,38 @@ def _async_register_services(hass: HomeAssistant) -> None:
             {
                 vol.Optional("site"): cv.string,
                 vol.Optional("format", default="both"): vol.In(["csv", "json", "both"]),
+            },
+            extra=vol.ALLOW_EXTRA,
+        ),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_BULK_SET,
+        _bulk_set,
+        schema=vol.Schema(
+            {
+                vol.Optional("site"): cv.string,
+                vol.Optional("all"): cv.boolean,
+                vol.Optional("all_shelly"): cv.boolean,
+                vol.Optional("model"): cv.string,
+                vol.Optional("input_type"): cv.string,
+                vol.Optional("input_mode"): cv.string,
+                vol.Optional("invert"): cv.boolean,
+                vol.Optional("initial_state"): cv.string,
+                vol.Optional("power_on_state"): cv.string,
+                vol.Optional("auto_on"): cv.boolean,
+                vol.Optional("auto_off"): cv.boolean,
+                vol.Optional("auto_on_delay"): vol.Coerce(float),
+                vol.Optional("auto_off_delay"): vol.Coerce(float),
+                vol.Optional("fade_rate"): vol.Coerce(int),
+                vol.Optional("transition_duration"): vol.Coerce(float),
+                vol.Optional("min_brightness"): vol.Coerce(int),
+                vol.Optional("max_brightness"): vol.Coerce(int),
+                vol.Optional("night_mode"): cv.boolean,
+                vol.Optional("night_brightness"): vol.Coerce(int),
+                vol.Optional("night_start"): cv.string,
+                vol.Optional("night_end"): cv.string,
             },
             extra=vol.ALLOW_EXTRA,
         ),
@@ -395,6 +429,46 @@ async def _set_advanced(call: ServiceCall) -> dict[str, Any] | None:
     rows = await _runtime(call.hass, call).set_advanced(settings, **_selectors(call))
     if call.return_response:
         return {"results": rows}
+    return None
+
+
+async def _bulk_set(call: ServiceCall) -> dict[str, int] | None:
+    from .groups import DIMMER_FIELDS, select_cards
+
+    runtime = _runtime(call.hass, call)
+    cards = runtime.device_cards()
+    data = call.data
+    if data.get("all") or data.get("all_shelly"):
+        chosen = cards
+    elif data.get("model"):
+        chosen = select_cards(cards, "model", model=str(data["model"]))
+    else:
+        chosen = []
+    device_ids = _ids(data.get("device_id"))
+    area_ids = _ids(data.get("area_id"))
+    if device_ids or area_ids:
+        entries = runtime._select_shelly_entries(
+            device_ids=device_ids,
+            area_ids=area_ids,
+            mac=data.get("mac"),
+            all_shelly=False,
+            model_contains=None,
+        )
+        ids = {entry.entry_id for entry in entries}
+        picked = [card for card in cards if card.entry_id in ids]
+        chosen = [card for card in chosen if card.entry_id in ids] if data.get("model") else picked
+    if not chosen:
+        raise ServiceValidationError("Choose all, a model, an area, or devices")
+    updates = {key: data[key] for key in DIMMER_FIELDS if key in data}
+    if "power_on_state" in data and "initial_state" not in updates:
+        updates["initial_state"] = data["power_on_state"]
+    if "input_mode" in updates:
+        updates["input_mode"] = data["input_mode"]
+    if not updates:
+        raise ServiceValidationError("Choose at least one setting to change")
+    started = runtime.start_bulk_apply([card.entry_id for card in chosen], updates)
+    if call.return_response:
+        return {"started": started}
     return None
 
 
