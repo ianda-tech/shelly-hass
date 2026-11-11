@@ -8,7 +8,7 @@
 [![Latest release](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fianda-tech%2Fshelly-hass%2Fmain%2Fcustom_components%2Fshelly_bulk%2Fmanifest.json&query=%24.version&prefix=v&label=Latest%20release&style=for-the-badge&color=2ea44f)](https://github.com/ianda-tech/shelly-hass/releases/latest)
 [![released](https://img.shields.io/github/release-date/ianda-tech/shelly-hass?label=released&style=for-the-badge)](https://github.com/ianda-tech/shelly-hass/releases/latest)
 
-**Current version: 0.2.3.** Bump this line in the same change as `version` in `custom_components/shelly_bulk/manifest.json`.
+**Current version: 0.2.4.** Bump this line in the same change as `version` in `custom_components/shelly_bulk/manifest.json`.
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![License: MIT](https://img.shields.io/github/license/ianda-tech/shelly-hass)](LICENSE)
@@ -306,6 +306,8 @@ data:
 Saving writes those values, reads them back, and marks any field the device did not keep. The Home Assistant device name and area are updated, and the same name, room, input, power-on state, fade rate, and transition are written into `shelly_bulk/devices.csv`.
 
 The following screen can copy the channel settings onto other devices. Type a model name to filter the list. Leave it empty to stop after the one device. The name and room are not copied.
+
+On a switch, **follow** only works with power-on state **match_input**. Changing input behaviour away from follow sets power-on to **restore_last**, and changing it to follow sets **match_input**. Those two fields are written in one call. The power-on list only shows values that are valid for the current input behaviour, and a switch is never sent `toggle` or a display label such as "Restore last".
 
 On each adopted Shelly's device page, **Input behaviour**, **Power-on state**, and **Auto off delay** are enabled. A dimmer also has **Fade rate** and **Transition**. Changing one writes it to the device and shows the value the device read back, so the same controls work on a dashboard. The advanced switches (cloud, Bluetooth, MQTT, and the rest) stay disabled until you enable them.
 

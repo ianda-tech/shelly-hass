@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.4
+
+- Power-on state and input behaviour are sent together in one `Switch.SetConfig`. `follow` sets `match_input`. Leaving `follow` while power-on is `match_input` sets `restore_last`. A switch is not offered `toggle` or display labels. The selects refresh after a rejected change so the UI shows the value the device kept.
+
 ## 0.2.3
 
 - Configure → Edit a device reads the live settings from an adopted Shelly and writes back only the fields that model reports. The Home Assistant name and area, and the devices.csv row, are updated. Each field that the device does not keep is shown as an error.

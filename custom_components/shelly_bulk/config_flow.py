@@ -27,6 +27,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .device_settings import CHANNEL_KEYS, channel_updates
+from .pairing import valid_initial_states
 from .security import SECURE_OPTION_DEFAULTS
 from .const import (
     BLE_SCANNER_MODES,
@@ -714,10 +715,17 @@ def _edit_schema(supported: tuple[str, ...] | list[str], values: dict[str, Any])
             schema[vol.Required(key, default=default)] = _number(low, high, step)
         elif key in _EDIT_CHOICES:
             options = list(_EDIT_CHOICES[key])
+            if key == "initial_state":
+                mode = str(values.get("input_mode") or "")
+                kind = "light" if mode in {"dim", "dual_dim"} or current == "toggle" else "switch"
+                allowed = set(valid_initial_states(kind, mode))
+                options = [item for item in options if item[0] in allowed]
+                if not options:
+                    options = [("restore_last", "Restore last")]
             known = {item[0] for item in options}
-            if current and str(current) not in known:
+            if current and str(current) not in known and key != "initial_state":
                 options.append((str(current), str(current)))
-            schema[vol.Required(key, default=str(current or options[0][0]))] = _choice(options)
+            schema[vol.Required(key, default=str(current if current in known else options[0][0]))] = _choice(options)
         else:
             schema[vol.Optional(key, default=str(current or ""))] = TextSelector()
     return vol.Schema(schema)

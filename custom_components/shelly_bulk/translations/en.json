@@ -285,8 +285,29 @@
           "disabled": "Disabled"
         }
       },
-      "input_mode": {"name": "Input behaviour"},
-      "power_on_state": {"name": "Power-on state"}
+      "input_mode": {
+        "name": "Input behaviour",
+        "state": {
+          "follow": "Follow",
+          "flip": "Toggle / flip",
+          "momentary": "Momentary",
+          "detached": "Detached",
+          "activate": "Activation",
+          "cycle": "Cycle",
+          "dim": "Dim",
+          "dual_dim": "Dual dim"
+        }
+      },
+      "power_on_state": {
+        "name": "Power-on state",
+        "state": {
+          "off": "Off",
+          "on": "On",
+          "restore_last": "Restore last",
+          "match_input": "Match input",
+          "toggle": "Toggle"
+        }
+      }
     },
     "switch": {
       "provisioning": {
