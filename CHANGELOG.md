@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+- Setup no longer waits for each Shelly to answer. Switch, number, select, and sensor controls start unavailable and share one read per device. That read runs in the background, at most a few devices at a time, and an offline device cannot hold the others or startup. Settings refresh about once a minute.
+
 ## 0.3.1
 
 - When Bluetooth setup has closed, **Scan for hotspots** lists Shelly setup access points the Supervisor can see, with signal. **Provision via hotspot** joins one access point on wlan0, sends the site Wi-Fi to `192.168.33.1`, and always puts wlan0 back. A batch runs one device at a time. Dry run reports the plan and does not join. This needs Home Assistant OS or Supervised and a Wi-Fi adapter. end0 must stay the connected primary interface with the default route. end0 is never changed.

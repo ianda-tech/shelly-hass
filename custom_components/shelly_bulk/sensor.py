@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, SHELLY_DOMAIN
 from .entity import FleetEntity, shelly_device_info
 from .runtime import FleetRuntime
 from .util import display_mac
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
@@ -174,62 +175,48 @@ class ShellyMacSensor(SensorEntity):
         self.runtime.publish_shelly_link(self._entry, str(self._entry.data.get(CONF_HOST) or ""))
 
 
-class ShellyIpSensor(SensorEntity):
-    """Live IP. Uses Shelly.GetStatus when the device answers, otherwise the core host."""
+class ShellyIpSensor(CoordinatorEntity, SensorEntity):
+    """IP from the shared device read, or the host already stored by core Shelly."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = True
     _attr_has_entity_name = True
-    _attr_should_poll = True
     _attr_translation_key = "ip_address"
-    _attr_scan_interval = timedelta(seconds=60)
 
     def __init__(self, runtime: FleetRuntime, shelly_entry) -> None:
+        super().__init__(runtime.device_coordinator(shelly_entry))
         self.runtime = runtime
         self._entry = shelly_entry
         self._attr_unique_id = f"{shelly_entry.entry_id}_ip_address"
         self._attr_device_info = shelly_device_info(runtime.hass, shelly_entry)
-        self._ip = str(shelly_entry.data.get(CONF_HOST) or "")
+
+    @property
+    def available(self) -> bool:
+        return bool(self.native_value)
 
     @property
     def native_value(self) -> str:
-        return self._ip
-
-    async def async_added_to_hass(self) -> None:
-        await self.async_update()
-
-    async def async_update(self) -> None:
-        info = await self.runtime.refresh_network(self._entry)
-        self._ip = str(info.get("ip") or "")
+        network = (self.coordinator.data or {}).get("network") or {}
+        return str(network.get("ip") or self._entry.data.get(CONF_HOST) or "")
 
 
-class ShellyWifiSensor(SensorEntity):
+class ShellyWifiSensor(CoordinatorEntity, SensorEntity):
     """SSID or RSSI from the same status read as the IP sensor."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = True
     _attr_has_entity_name = True
-    _attr_should_poll = False
 
     def __init__(self, runtime: FleetRuntime, shelly_entry, key: str) -> None:
+        super().__init__(runtime.device_coordinator(shelly_entry))
         self.runtime = runtime
         self._entry = shelly_entry
         self._key = key
         self._attr_unique_id = f"{shelly_entry.entry_id}_{key}"
         self._attr_translation_key = "wifi_ssid" if key == "ssid" else "wifi_rssi"
         self._attr_device_info = shelly_device_info(runtime.hass, shelly_entry)
-        self._value = None
 
     @property
     def native_value(self):
-        return self._value
-
-    async def async_added_to_hass(self) -> None:
-        self.async_on_remove(self.runtime.add_listener(self._pull))
-        self._pull()
-
-    def _pull(self) -> None:
-        cached = self.runtime._network.get(self._entry.entry_id) or {}
-        self._value = cached.get(self._key)
-        if self.hass is not None:
-            self.async_write_ha_state()
+        network = (self.coordinator.data or {}).get("network") or {}
+        return network.get(self._key)
