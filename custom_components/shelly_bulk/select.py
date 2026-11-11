@@ -65,17 +65,7 @@ class AdvancedSelect(SelectEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        self.async_on_remove(self.runtime.add_listener(self._on_runtime))
         await self._refresh()
-
-    def _on_runtime(self) -> None:
-        if self._key not in {"input_mode", "power_on_state"}:
-            return
-        self.hass.async_create_task(self._refresh_from_runtime())
-
-    async def _refresh_from_runtime(self) -> None:
-        await self._refresh()
-        self.async_write_ha_state()
 
     @property
     def available(self) -> bool:

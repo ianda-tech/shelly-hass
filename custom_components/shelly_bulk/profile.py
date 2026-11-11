@@ -265,41 +265,70 @@ def _apply_split_ramps(
             config["transition_duration"] = settings.transition_up
 
 
-def plan_security_calls(security: SecuritySettings) -> list[RpcCall]:
+def _known_component(config: dict[str, Any] | None, *keys: str) -> dict[str, Any] | None:
+    """Return a component dict when the caller actually read the device config."""
+    if config is None:
+        return None
+    for key in keys:
+        value = config.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def plan_security_calls(
+    security: SecuritySettings, config: dict[str, Any] | None = None
+) -> list[RpcCall]:
     """Calls that harden a device after it has joined Wi-Fi.
 
     Home Assistant's own BLE flow always turns the AP and BLE RPC off. Passing
     the installer's choice here puts them back if they were unchecked.
+
+    When ``config`` is the device's current config, a call is omitted if that
+    value is already set. Omitting it matters: BLE, Wi-Fi, cloud, and system
+    SetConfig set ``restart_required`` even when the value did not change.
     """
     calls: list[RpcCall] = []
+    sys_component = _known_component(config, "sys")
+    device = sys_component.get("device") if isinstance(sys_component, dict) else None
+    location = sys_component.get("location") if isinstance(sys_component, dict) else None
+    device = device if isinstance(device, dict) else {}
+    location = location if isinstance(location, dict) else {}
     sys_config: dict[str, Any] = {}
-    if security.device_name:
+    if security.device_name and (sys_component is None or device.get("name") != security.device_name):
         sys_config["device"] = {"name": security.device_name}
-    if security.timezone:
+    if security.timezone and (sys_component is None or location.get("tz") != security.timezone):
         sys_config["location"] = {"tz": security.timezone}
     if sys_config:
         calls.append(RpcCall("Sys.SetConfig", {"config": sys_config}, "system"))
-    if security.disable_cloud:
+    cloud = _known_component(config, "cloud")
+    if security.disable_cloud and (cloud is None or cloud.get("enable") is not False):
         calls.append(RpcCall("Cloud.SetConfig", {"config": {"enable": False}}, "cloud"))
-    calls.append(
-        RpcCall(
-            "WiFi.SetConfig",
-            {"config": {"ap": {"enable": not security.disable_ap}}},
-            "wifi access point",
+    desired_ap = not security.disable_ap
+    wifi = _known_component(config, "wifi")
+    ap = wifi.get("ap") if isinstance(wifi, dict) else None
+    current_ap = ap.get("enable") if isinstance(ap, dict) else None
+    if wifi is None or current_ap is None or bool(current_ap) is not desired_ap:
+        calls.append(
+            RpcCall(
+                "WiFi.SetConfig",
+                {"config": {"ap": {"enable": desired_ap}}},
+                "wifi access point",
+            )
         )
-    )
-    calls.append(
-        RpcCall(
-            "BLE.SetConfig",
-            {
-                "config": {
-                    "enable": True,
-                    "rpc": {"enable": not security.disable_ble_rpc},
-                }
-            },
-            "bluetooth",
+    desired_rpc = not security.disable_ble_rpc
+    ble = _known_component(config, "ble")
+    rpc = ble.get("rpc") if isinstance(ble, dict) and isinstance(ble.get("rpc"), dict) else {}
+    current_rpc = rpc.get("enable") if rpc else None
+    ble_on = ble.get("enable") if isinstance(ble, dict) else None
+    if ble is None or ble_on is not True or current_rpc is None or bool(current_rpc) is not desired_rpc:
+        calls.append(
+            RpcCall(
+                "BLE.SetConfig",
+                {"config": {"enable": True, "rpc": {"enable": desired_rpc}}},
+                "bluetooth",
+            )
         )
-    )
     return calls
 
 
@@ -352,7 +381,7 @@ def plan_config_calls(
     """Return the RPC plan for one device. Authentication and firmware are separate."""
     calls: list[RpcCall] = []
     if security is not None:
-        calls.extend(plan_security_calls(security))
+        calls.extend(plan_security_calls(security, config))
     channel_calls, notes = plan_channel_calls(config, channel_from_options(options), device)
     calls.extend(channel_calls)
     return calls, notes
