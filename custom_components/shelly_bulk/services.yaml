@@ -349,3 +349,69 @@ import_allowlist:
     replace:
       selector:
         boolean:
+
+bulk_set:
+  fields:
+    device_id:
+      selector:
+        device:
+          integration: shelly
+          multiple: true
+    area_id:
+      selector:
+        area:
+          multiple: true
+    site:
+      selector:
+        text:
+    all:
+      selector:
+        boolean:
+    model:
+      selector:
+        text:
+    input_mode:
+      selector:
+        text:
+    input_type:
+      selector:
+        text:
+    invert:
+      selector:
+        boolean:
+    initial_state:
+      selector:
+        text:
+    power_on_state:
+      selector:
+        text:
+    auto_on:
+      selector:
+        boolean:
+    auto_off:
+      selector:
+        boolean:
+    auto_on_delay:
+      selector:
+        number:
+          min: 0
+          max: 86400
+          mode: box
+    auto_off_delay:
+      selector:
+        number:
+          min: 0
+          max: 86400
+          mode: box
+    fade_rate:
+      selector:
+        number:
+          min: 1
+          max: 5
+          mode: box
+    transition_duration:
+      selector:
+        number:
+          min: 0
+          max: 10800
+          mode: box

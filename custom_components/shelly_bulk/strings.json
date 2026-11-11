@@ -67,7 +67,8 @@
           "provisioning": "Provisioning",
           "allowlist": "Import allowlist",
           "add_device": "Add device",
-          "edit_device": "Edit a device"
+          "edit_device": "Edit a device",
+          "bulk_change": "Bulk change settings"
         }
       },
       "wifi": {
@@ -230,9 +231,66 @@
       },
       "copy_settings": {
         "title": "Copy settings to other devices",
-        "description": "Apply the same channel settings to other Shellies. The list is labelled with the model, so you can filter by it. Leave it empty to keep the change on the device you just edited. Problems: {details}.",
+        "description": "Choose a group. The change runs in the background. Don't copy leaves the edit on this device only.",
         "data": {
-          "targets": "Other devices"
+          "group": "Devices"
+        }
+      },
+      "bulk_change": {
+        "title": "Bulk change settings",
+        "description": "Choose devices by group. You confirm how many will change before any device is touched.",
+        "data": {
+          "group": "Devices"
+        }
+      },
+      "bulk_filter": {
+        "title": "Which devices",
+        "data": {
+          "model": "Model",
+          "room": "Room",
+          "devices": "Devices"
+        }
+      },
+      "bulk_confirm": {
+        "title": "Confirm",
+        "description": "{summary}"
+      },
+      "bulk_fields": {
+        "title": "Settings to change",
+        "description": "Every field starts unchanged. Only ticked fields are sent. Fields this group does not support are hidden.",
+        "data": {
+          "change_input_type": "Change input type",
+          "input_type": "Input type",
+          "change_input_mode": "Change input behaviour",
+          "input_mode": "Input behaviour",
+          "change_invert": "Change invert",
+          "invert": "Invert",
+          "change_initial_state": "Change power-on state",
+          "initial_state": "Power-on state",
+          "change_auto_on": "Change auto on",
+          "auto_on": "Auto on",
+          "change_auto_on_delay": "Change auto on delay",
+          "auto_on_delay": "Auto on delay (seconds)",
+          "change_auto_off": "Change auto off",
+          "auto_off": "Auto off",
+          "change_auto_off_delay": "Change auto off delay",
+          "auto_off_delay": "Auto off delay (seconds)",
+          "change_fade_rate": "Change fade rate",
+          "fade_rate": "Fade rate (1-5)",
+          "change_transition_duration": "Change transition",
+          "transition_duration": "Transition (seconds)",
+          "change_min_brightness": "Change minimum brightness",
+          "min_brightness": "Minimum brightness",
+          "change_max_brightness": "Change maximum brightness",
+          "max_brightness": "Maximum brightness",
+          "change_night_mode": "Change night mode",
+          "night_mode": "Night mode",
+          "change_night_brightness": "Change night brightness",
+          "night_brightness": "Night brightness",
+          "change_night_start": "Change night start",
+          "night_start": "Night mode start (HH:MM)",
+          "change_night_end": "Change night end",
+          "night_end": "Night mode end (HH:MM)"
         }
       }
     },
@@ -251,7 +309,10 @@
     "abort": {
       "allowlist_imported": "Imported {count} devices into this Home Assistant instance.",
       "not_loaded": "Shelly Bulk is not loaded yet. Finish setup and try again.",
-      "no_devices": "No Shelly devices have been added yet."
+      "no_devices": "No Shelly devices have been added yet.",
+      "bulk_started": "Applying settings to {count} devices. Progress and results are in a notification, and in the report.",
+      "device_saved": "Saved this device. No other devices were changed.",
+      "nothing_selected": "No settings were ticked, so nothing was sent."
     }
   },
   "entity": {
@@ -268,6 +329,10 @@
       "last_error": {
         "name": "Last error"
       },
+      "mac_address": {"name": "MAC address"},
+      "ip_address": {"name": "IP address"},
+      "wifi_ssid": {"name": "Wi-Fi SSID"},
+      "wifi_rssi": {"name": "Wi-Fi signal"},
       "security_audit": {
         "name": "Security audit",
         "state": {
@@ -567,6 +632,34 @@
         "fade_rate": {"name": "Fade rate", "description": "button_fade_rate from 1 to 5."},
         "transition_duration": {"name": "Transition duration", "description": "Seconds from 0% to 100%."},
         "device_name": {"name": "Device name", "description": "Sys device.name on the Shelly."}
+      }
+    },
+    "bulk_set": {
+      "name": "Bulk set",
+      "description": "Change settings on a group of Shellies in the background. Only the fields you include are sent. Input behaviour and power-on state are paired so a switch accepts them.",
+      "fields": {
+        "device_id": {"name": "Devices", "description": "Core Shelly devices to update."},
+        "area_id": {"name": "Areas", "description": "Update every core Shelly device in these areas."},
+        "site": {"name": "Site", "description": "Shelly Bulk site name when more than one entry exists."},
+        "all": {"name": "All Shellies", "description": "Update every core Shelly config entry."},
+        "model": {"name": "Model", "description": "Model code or name, for example S3SW-001P8EU."},
+        "input_type": {"name": "Input type", "description": "switch or button."},
+        "input_mode": {"name": "Input behaviour", "description": "follow, flip, momentary, detached, or activate."},
+        "invert": {"name": "Invert", "description": "Invert the input."},
+        "initial_state": {"name": "Power-on state", "description": "off, on, restore_last, or match_input."},
+        "power_on_state": {"name": "Power-on state", "description": "Same as initial_state."},
+        "auto_on": {"name": "Auto on", "description": "Enable the auto-on timer."},
+        "auto_off": {"name": "Auto off", "description": "Enable the auto-off timer."},
+        "auto_on_delay": {"name": "Auto on delay", "description": "Seconds."},
+        "auto_off_delay": {"name": "Auto off delay", "description": "Seconds."},
+        "fade_rate": {"name": "Fade rate", "description": "1 to 5, dimmers only."},
+        "transition_duration": {"name": "Transition", "description": "Seconds, dimmers only."},
+        "min_brightness": {"name": "Minimum brightness", "description": "Dimmers only. Set maximum as well."},
+        "max_brightness": {"name": "Maximum brightness", "description": "Dimmers only."},
+        "night_mode": {"name": "Night mode", "description": "Dimmers only."},
+        "night_brightness": {"name": "Night brightness", "description": "Dimmers only."},
+        "night_start": {"name": "Night start", "description": "HH:MM."},
+        "night_end": {"name": "Night end", "description": "HH:MM."}
       }
     }
   }

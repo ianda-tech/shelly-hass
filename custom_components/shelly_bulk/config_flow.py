@@ -27,6 +27,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .device_settings import CHANNEL_KEYS, channel_updates
+from .groups import confirmation_text, fields_for, model_options, room_options, select_cards, ticked_updates
 from .pairing import valid_initial_states
 from .security import SECURE_OPTION_DEFAULTS
 from .const import (
@@ -622,6 +623,8 @@ class ShellyBulkOptionsFlow(OptionsFlow):
                     details = ", ".join(sorted(field_errors))
                 else:
                     self._saved_channel = channel_updates(values)
+                    self._bulk_purpose = "copy"
+                    self._bulk_updates = dict(self._saved_channel)
                     return await self.async_step_copy_settings()
         return self.async_show_form(
             step_id="edit_fields",
@@ -634,39 +637,131 @@ class ShellyBulkOptionsFlow(OptionsFlow):
         )
 
     async def async_step_copy_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Optionally apply the channel settings to other devices. Leave the list empty to skip."""
+        """Choose a group to receive the settings just saved. Runs in the background."""
+        self._bulk_purpose = "copy"
+        self._bulk_updates = dict(getattr(self, "_saved_channel", {}) or {})
+        return await self._group_step("copy_settings", user_input, include_none=True)
+
+    async def async_step_bulk_change(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Start a bulk change. The device work happens after the form closes."""
+        self._bulk_purpose = "bulk"
+        return await self._group_step("bulk_change", user_input, include_none=False)
+
+    async def _group_step(
+        self,
+        step_id: str,
+        user_input: dict[str, Any] | None,
+        *,
+        include_none: bool,
+    ) -> ConfigFlowResult:
         runtime = self._fleet()
         if runtime is None:
             return self.async_abort(reason="not_loaded")
-        choices = [item for item in runtime.adopted_device_choices() if item["id"] != self._edit_id]
-        errors: dict[str, str] = {}
-        details = "none"
+        self._bulk_cards = runtime.device_cards()
+        if not self._bulk_cards and not include_none:
+            return self.async_abort(reason="no_devices")
+        options = [("all", "All Shellies"), ("model", "By model"), ("room", "By room"), ("unnamed", "Only unnamed devices"), ("individual", "Pick individually")]
+        if include_none:
+            options.insert(0, ("none", "Don't copy"))
         if user_input is not None:
-            targets = [str(item) for item in (user_input.get("targets") or []) if str(item) != "_none"]
-            if not targets:
-                return self.async_create_entry(data=dict(self.config_entry.options))
-            problems = await runtime.copy_channel_settings(targets, self._saved_channel)
-            if not problems:
-                return self.async_create_entry(data=dict(self.config_entry.options))
-            errors["base"] = "not_applied"
-            details = "; ".join(f"{entry_id}: {message}" for entry_id, message in problems.items())
+            kind = str(user_input["group"])
+            if kind == "none":
+                return self.async_abort(reason="device_saved")
+            self._bulk_kind = kind
+            if kind in {"all", "unnamed"}:
+                return await self._open_bulk_confirm()
+            return await self.async_step_bulk_filter()
+        default = "none" if include_none else "all"
         return self.async_show_form(
-            step_id="copy_settings",
-            data_schema=vol.Schema(
+            step_id=step_id,
+            data_schema=vol.Schema({vol.Required("group", default=default): _choice(options)}),
+        )
+
+    async def async_step_bulk_filter(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        runtime = self._fleet()
+        if runtime is None:
+            return self.async_abort(reason="not_loaded")
+        kind = self._bulk_kind
+        cards = self._bulk_cards
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if kind == "model":
+                self._bulk_model = str(user_input.get("model") or "")
+            elif kind == "room":
+                self._bulk_room = str(user_input.get("room") or "")
+            else:
+                self._bulk_ids = {str(item) for item in (user_input.get("devices") or [])}
+            return await self._open_bulk_confirm()
+        if kind == "model":
+            options = model_options(cards)
+            if not options:
+                return self.async_abort(reason="no_devices")
+            schema = vol.Schema({vol.Required("model"): _choice([(item["value"], item["label"]) for item in options])})
+        elif kind == "room":
+            options = room_options(cards)
+            schema = vol.Schema({vol.Required("room"): _choice([(item["value"], item["label"]) for item in options])})
+        else:
+            schema = vol.Schema(
                 {
-                    vol.Optional("targets", default=[]): SelectSelector(
+                    vol.Required("devices"): SelectSelector(
                         SelectSelectorConfig(
-                            options=[{"value": item["id"], "label": item["label"]} for item in choices] or [{"value": "_none", "label": "No other devices"}],
+                            options=[{"value": card.entry_id, "label": card.label} for card in cards],
                             multiple=True,
                             mode=SelectSelectorMode.DROPDOWN,
                             sort=True,
                         )
                     )
                 }
-            ),
-            errors=errors,
-            description_placeholders={"details": details},
+            )
+        return self.async_show_form(step_id="bulk_filter", data_schema=schema, errors=errors)
+
+    async def _open_bulk_confirm(self) -> ConfigFlowResult:
+        chosen = select_cards(
+            self._bulk_cards,
+            self._bulk_kind,
+            model=getattr(self, "_bulk_model", ""),
+            room=getattr(self, "_bulk_room", ""),
+            entry_ids=getattr(self, "_bulk_ids", set()),
+            exclude_id=getattr(self, "_edit_id", "") if self._bulk_purpose == "copy" else "",
         )
+        self._bulk_chosen = chosen
+        if not chosen:
+            return self.async_abort(reason="no_devices")
+        return await self.async_step_bulk_confirm()
+
+    async def async_step_bulk_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        summary = confirmation_text(self._bulk_chosen)
+        if user_input is not None:
+            if self._bulk_purpose == "copy":
+                return self._start_bulk(self._bulk_updates)
+            self._bulk_fields = fields_for(self._bulk_chosen)
+            return await self.async_step_bulk_fields()
+        return self.async_show_form(
+            step_id="bulk_confirm",
+            data_schema=vol.Schema({}),
+            description_placeholders={"summary": summary},
+        )
+
+    async def async_step_bulk_fields(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        fields = self._bulk_fields
+        if user_input is not None:
+            updates = ticked_updates(user_input, fields)
+            if not updates:
+                return self.async_abort(reason="nothing_selected")
+            return self._start_bulk(updates)
+        schema: dict[Any, Any] = {}
+        for key in fields:
+            schema[vol.Required(f"change_{key}", default=False)] = BooleanSelector()
+            dimmers_only = bool(self._bulk_chosen) and all(card.dimmer for card in self._bulk_chosen)
+            schema.update(_bulk_value_field(key, dimmers_only=dimmers_only))
+        return self.async_show_form(step_id="bulk_fields", data_schema=vol.Schema(schema))
+
+    def _start_bulk(self, updates: dict[str, Any]) -> ConfigFlowResult:
+        runtime = self._fleet()
+        count = 0
+        if runtime is not None:
+            count = runtime.start_bulk_apply([card.entry_id for card in self._bulk_chosen], updates)
+        return self.async_abort(reason="bulk_started", description_placeholders={"count": str(count)})
 
 
 _EDIT_NUMBERS = {
@@ -729,6 +824,22 @@ def _edit_schema(supported: tuple[str, ...] | list[str], values: dict[str, Any])
         else:
             schema[vol.Optional(key, default=str(current or ""))] = TextSelector()
     return vol.Schema(schema)
+
+
+def _bulk_value_field(key: str, *, dimmers_only: bool = False) -> dict[Any, Any]:
+    """The value control next to a 'change this' toggle. It is ignored unless the toggle is on."""
+    if key in {"invert", "auto_on", "auto_off", "night_mode"}:
+        return {vol.Required(key, default=False): BooleanSelector()}
+    if key in _EDIT_NUMBERS:
+        low, high, step = _EDIT_NUMBERS[key]
+        return {vol.Optional(key, default=low): _number(low, high, step)}
+    if key == "initial_state":
+        options = [("off", "Off"), ("on", "On"), ("restore_last", "Restore last")]
+        options.append(("toggle", "Toggle") if dimmers_only else ("match_input", "Match input"))
+        return {vol.Required(key, default="restore_last"): _choice(options)}
+    if key in _EDIT_CHOICES:
+        return {vol.Required(key, default=_EDIT_CHOICES[key][0][0]): _choice(list(_EDIT_CHOICES[key]))}
+    return {vol.Optional(key, default=""): TextSelector()}
 
 
 def _valid_timezone(value: str) -> bool:

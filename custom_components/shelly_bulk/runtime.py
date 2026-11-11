@@ -93,6 +93,7 @@ class FleetRuntime:
         self._log_filter = SecretFilter(self.secrets)
         self._list_mtime: float | None = None
         self._list_unsub = None
+        self._network: dict[str, dict[str, Any]] = {}
         _LOGGER.addFilter(self._log_filter)
 
     @property
@@ -183,7 +184,7 @@ class FleetRuntime:
             "results": self.results[-MAX_STORED_RESULTS:],
         }
 
-    def record(self, mac: str, status: str, error: str = "", **extra: Any) -> None:
+    def record(self, mac: str, status: str, error: str = "", *, count: bool = True, **extra: Any) -> None:
         """Append a per-device result. Passwords are never stored."""
         safe_error = self.redact(error)
         row = {
@@ -193,8 +194,15 @@ class FleetRuntime:
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
         row.update({key: value for key, value in extra.items() if key not in {"password", "ssid", "ha1"}})
+        if row.get("ip") and not row.get("host"):
+            row["host"] = row["ip"]
         self.results.append(row)
         self.results = self.results[-MAX_STORED_RESULTS:]
+        if not count:
+            self.notify()
+            self._store.async_delay_save(self._store_data, 1)
+            _LOGGER.info("Shelly %s: %s %s", row["mac"], status, safe_error)
+            return
         if status == "ok":
             self.adopted += 1
             async_delete_issue(self.hass, DOMAIN, f"ble_window_{_mac_key(mac)}")
@@ -437,42 +445,80 @@ class FleetRuntime:
             message = "No new Shelly advertisements were heard." + extra
         else:
             lines = [
-                f"{display_mac(item['mac'])}  {item.get('model_hint') or 'unknown model'}  "
+                f"MAC {display_mac(item['mac'])}  IP {item.get('ip') or 'unknown'}  "
+                f"{item.get('model_hint') or 'unknown model'}  "
                 f"RSSI {item.get('rssi') or 0}  via {item.get('source') or 'unknown scanner'}"
                 for item in listed
             ]
             message = "\n".join(lines) + extra
         self._notify("Find my Shelly", message, "shelly_bulk_find")
 
-    def adopted_device_choices(self) -> list[dict[str, str]]:
-        """Label each core Shelly as name, room, model, and MAC."""
+    def device_cards(self) -> list:
+        """One card per core Shelly, with a short label, MAC, and IP."""
+        from .device_settings import model_is_dimmer
+        from .groups import DeviceCard, device_label, friendly_model, short_name
+
         area_reg = ar.async_get(self.hass)
         dev_reg = dr.async_get(self.hass)
-        choices: list[dict[str, str]] = []
+        cards = []
         for entry in self.hass.config_entries.async_entries(SHELLY_DOMAIN):
             devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
             device = next((item for item in devices if item.via_device_id is None), None)
             if device is None and devices:
                 device = devices[0]
-            name = ""
+            name_by_user = ""
+            device_name = entry.title or ""
             room = ""
+            area_id = ""
             if device is not None:
-                name = device.name_by_user or device.name or ""
-                if device.area_id:
-                    area = area_reg.async_get_area(device.area_id)
+                name_by_user = device.name_by_user or ""
+                device_name = device.name or device_name
+                area_id = device.area_id or ""
+                if area_id:
+                    area = area_reg.async_get_area(area_id)
                     room = area.name if area else ""
-            if not name:
-                name = entry.title or "Shelly"
-            model = str(entry.data.get("model") or "unknown model")
+            model = str(entry.data.get("model") or "")
             mac = ""
             if entry.unique_id:
                 try:
                     mac = display_mac(entry.unique_id)
                 except ValueError:
                     mac = str(entry.unique_id)
-            label = " · ".join(part for part in (name, room or "no room", model, mac) if part)
-            choices.append({"id": entry.entry_id, "label": label, "room": room, "model": model})
-        return choices
+            ip = str(entry.data.get("host") or "")
+            cached = getattr(self, "_network", {}).get(entry.entry_id) or {}
+            if cached.get("ip"):
+                ip = str(cached["ip"])
+            title, unnamed = short_name(name_by_user, device_name, model, mac)
+            friendly = friendly_model(model)
+            cards.append(
+                DeviceCard(
+                    entry_id=entry.entry_id,
+                    label=device_label(title, room, mac, ip),
+                    room=room,
+                    area_id=area_id,
+                    model=model or friendly,
+                    friendly=friendly,
+                    mac=mac,
+                    ip=ip,
+                    unnamed=unnamed,
+                    dimmer=model_is_dimmer(model) or model_is_dimmer(friendly),
+                )
+            )
+        return cards
+
+    def adopted_device_choices(self) -> list[dict[str, str]]:
+        """Label each core Shelly with its short name, room, MAC, and IP."""
+        return [
+            {
+                "id": card.entry_id,
+                "label": card.label,
+                "room": card.room,
+                "model": card.model,
+                "mac": card.mac,
+                "ip": card.ip,
+            }
+            for card in self.device_cards()
+        ]
 
     async def read_device_form(self, entry_id: str):
         entry = self.hass.config_entries.async_get_entry(entry_id)
@@ -568,6 +614,135 @@ class FleetRuntime:
         self._list_mtime = await self.hass.async_add_executor_job(lambda: path.stat().st_mtime if path.is_file() else None)
         self._store.async_delay_save(self._store_data, 0.1)
 
+    def publish_shelly_link(self, entry: ConfigEntry, ip: str) -> None:
+        """Put the MAC on the device and point Visit at http://<ip>."""
+        dev_reg = dr.async_get(self.hass)
+        devices = dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+        device = next((item for item in devices if item.via_device_id is None), None)
+        if device is None and devices:
+            device = devices[0]
+        if device is None:
+            return
+        mac = ""
+        if entry.unique_id:
+            try:
+                mac = display_mac(entry.unique_id)
+            except ValueError:
+                mac = ""
+        kwargs: dict[str, Any] = {}
+        if mac:
+            kwargs["merge_connections"] = {(dr.CONNECTION_NETWORK_MAC, mac)}
+        if ip:
+            kwargs["configuration_url"] = f"http://{ip}"
+        if kwargs:
+            dev_reg.async_update_device(device.id, **kwargs)
+
+    async def refresh_network(self, entry: ConfigEntry) -> dict[str, Any]:
+        """Read the live Wi-Fi address. Falls back to the host stored by core Shelly."""
+        ip = str(entry.data.get("host") or "")
+        ssid = ""
+        rssi = None
+        try:
+            session = await self._open_shelly(entry, attempts=1)
+            try:
+                status = await asyncio.wait_for(session.call("Shelly.GetStatus"), timeout=8)
+            finally:
+                await session.shutdown()
+            wifi = status.get("wifi") if isinstance(status, dict) else None
+            if isinstance(wifi, dict):
+                ip = str(wifi.get("sta_ip") or ip)
+                ssid = str(wifi.get("ssid") or "")
+                rssi = wifi.get("rssi")
+        except Exception:  # noqa: BLE001
+            pass
+        self._network[entry.entry_id] = {"ip": ip, "ssid": ssid, "rssi": rssi}
+        self.publish_shelly_link(entry, ip)
+        self.notify()
+        return self._network[entry.entry_id]
+
+    def start_bulk_apply(self, entry_ids: list[str], updates: dict[str, Any]) -> int:
+        """Apply settings in the background. The caller does not wait for the devices."""
+        ids = list(dict.fromkeys(entry_ids))
+        payload = dict(updates)
+        self.hass.async_create_background_task(
+            self._bulk_apply(ids, payload),
+            name="shelly_bulk_bulk_set",
+        )
+        self._notify(
+            "Shelly Bulk",
+            f"Applying settings to {len(ids)} devices.",
+            "shelly_bulk_bulk",
+        )
+        return len(ids)
+
+    async def _bulk_apply(self, entry_ids: list[str], updates: dict[str, Any]) -> None:
+        semaphore = asyncio.Semaphore(5)
+        ok = failed = skipped = 0
+        lines: list[str] = []
+
+        async def _one(entry_id: str) -> None:
+            nonlocal ok, failed, skipped
+            async with semaphore:
+                entry = self.hass.config_entries.async_get_entry(entry_id)
+                mac = str(entry.unique_id or entry_id) if entry else entry_id
+                ip = str(entry.data.get("host") or "") if entry else ""
+                label = next((card.label for card in self.device_cards() if card.entry_id == entry_id), mac)
+                try:
+                    status, reason = await asyncio.wait_for(self._bulk_one(entry, updates), timeout=25)
+                except asyncio.TimeoutError:
+                    status, reason = "failed", "Timed out"
+                except Exception as err:  # noqa: BLE001
+                    status, reason = "failed", self.redact(str(err))
+                if status == "ok":
+                    ok += 1
+                elif status == "skipped":
+                    skipped += 1
+                else:
+                    failed += 1
+                self.record(mac, status, reason, count=False, ip=ip, host=ip)
+                lines.append(f"{label}: {status}" + (f" ({reason})" if reason else ""))
+                self._notify(
+                    "Shelly Bulk",
+                    f"Applying settings to {len(entry_ids)} devices.\n"
+                    f"{ok} ok, {failed} failed, {skipped} skipped, {len(entry_ids) - ok - failed - skipped} left.\n"
+                    + "\n".join(lines[-8:]),
+                    "shelly_bulk_bulk",
+                )
+
+        await asyncio.gather(*(_one(entry_id) for entry_id in entry_ids))
+        self._notify(
+            "Shelly Bulk",
+            f"Finished. {ok} ok, {failed} failed, {skipped} skipped.\n" + "\n".join(lines[-20:]),
+            "shelly_bulk_bulk",
+        )
+
+    async def _bulk_one(self, entry: ConfigEntry | None, updates: dict[str, Any]) -> tuple[str, str]:
+        if entry is None:
+            return "failed", "Device is no longer installed"
+        session = await self._open_shelly(entry, attempts=1)
+        try:
+            live = await read_live_settings(session)
+            applicable = {key: value for key, value in updates.items() if key in live.supported}
+            if not applicable:
+                return "skipped", "This device does not have the selected settings"
+            errors = await apply_live_settings(session, applicable)
+        finally:
+            await session.shutdown()
+        if errors:
+            return "failed", ", ".join(sorted(errors))
+        csv_changes: dict[str, str] = {}
+        if "input_mode" in applicable:
+            csv_changes["input"] = str(applicable["input_mode"])
+        if "initial_state" in applicable:
+            csv_changes["initial_state"] = str(applicable["initial_state"])
+        if "fade_rate" in applicable:
+            csv_changes["fade_rate"] = str(applicable["fade_rate"])
+        if "transition_duration" in applicable:
+            csv_changes["transition"] = str(applicable["transition_duration"])
+        if csv_changes and entry.unique_id:
+            await self._write_csv_changes(str(entry.unique_id), csv_changes)
+        return "ok", ""
+
     async def async_import_allowlist(self, filename: str, replace: bool = True) -> int:
         path = resolve_config_path(self.hass.config.path(), filename)
         if not path.is_file():
@@ -608,7 +783,7 @@ class FleetRuntime:
         if report_format in {"csv", "both"}:
             csv_path = folder / f"report-{slug}-{stamp}.csv"
             buffer = io.StringIO()
-            fieldnames = ["mac", "name", "room", "status", "model", "firmware", "host", "error", "notes", "at"]
+            fieldnames = ["mac", "ip", "name", "room", "status", "model", "firmware", "host", "error", "notes", "at"]
             writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             for row in rows:
@@ -620,15 +795,37 @@ class FleetRuntime:
             paths["csv"] = str(csv_path)
         return paths
 
+    def _ip_by_mac(self) -> dict[str, str]:
+        found: dict[str, str] = {}
+        for entry in self.hass.config_entries.async_entries(SHELLY_DOMAIN):
+            if not entry.unique_id:
+                continue
+            ip = str(entry.data.get("host") or "")
+            cached = getattr(self, "_network", {}).get(entry.entry_id) or {}
+            if cached.get("ip"):
+                ip = str(cached["ip"])
+            found[_mac_key(str(entry.unique_id))] = ip
+        return found
+
     def _report_rows(self) -> list[dict[str, Any]]:
+        ips = self._ip_by_mac()
         seen = {_mac_key(str(row.get("mac", ""))) for row in self.results}
-        rows = [dict(row) for row in self.results]
+        rows = []
+        for raw in self.results:
+            row = dict(raw)
+            key = _mac_key(str(row.get("mac", "")))
+            row["ip"] = row.get("ip") or row.get("host") or ips.get(key, "")
+            row["host"] = row.get("host") or row["ip"]
+            rows.append(row)
         for mac, device in self.allowlist.devices.items():
             if mac in seen:
                 continue
+            ip = ips.get(mac, "")
             rows.append(
                 {
                     "mac": display_mac(mac),
+                    "ip": ip,
+                    "host": ip,
                     "name": device.name,
                     "room": device.room,
                     "status": "not_seen",
@@ -921,9 +1118,10 @@ class FleetRuntime:
                 except Exception:  # noqa: BLE001
                     pass
 
-    async def _connect_with_retries(self, host, port, username, password, verify_ssl):
+    async def _connect_with_retries(self, host, port, username, password, verify_ssl, attempts: int | None = None):
         last: Exception | None = None
-        for _ in range(CONNECT_ATTEMPTS):
+        tries = CONNECT_ATTEMPTS if attempts is None else max(1, attempts)
+        for index in range(tries):
             try:
                 return await async_open_rpc(
                     self.hass, str(host), int(port), username, password, verify_ssl
@@ -932,7 +1130,8 @@ class FleetRuntime:
                 raise
             except Exception as err:  # noqa: BLE001
                 last = err
-                await asyncio.sleep(3)
+                if index + 1 < tries:
+                    await asyncio.sleep(3)
         assert last is not None
         raise last
 
@@ -1114,7 +1313,7 @@ class FleetRuntime:
             self.notify()
         return read_back
 
-    async def _open_shelly(self, entry: ConfigEntry):
+    async def _open_shelly(self, entry: ConfigEntry, attempts: int | None = None):
         host = entry.data.get(CONF_HOST)
         if not host:
             raise ServiceValidationError("The Shelly entry has no host")
@@ -1128,6 +1327,7 @@ class FleetRuntime:
             username,
             password,
             bool(entry.data.get(CONF_VERIFY_SSL, False)),
+            attempts,
         )
 
     async def _secure_one(self, entry: ConfigEntry, profile, password: str) -> dict[str, Any]:

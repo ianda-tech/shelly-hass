@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
-from .entity import FleetEntity
+from .const import DOMAIN, SHELLY_DOMAIN
+from .entity import FleetEntity, shelly_device_info
 from .runtime import FleetRuntime
+from .util import display_mac
 
 
 async def async_setup_entry(
@@ -18,15 +22,19 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     runtime: FleetRuntime = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        [
-            AdoptedSensor(runtime),
-            PendingSensor(runtime),
-            FailedSensor(runtime),
-            LastErrorSensor(runtime),
-            SecurityAuditSensor(runtime),
-        ]
-    )
+    entities: list[SensorEntity] = [
+        AdoptedSensor(runtime),
+        PendingSensor(runtime),
+        FailedSensor(runtime),
+        LastErrorSensor(runtime),
+        SecurityAuditSensor(runtime),
+    ]
+    for shelly_entry in hass.config_entries.async_entries(SHELLY_DOMAIN):
+        entities.append(ShellyMacSensor(runtime, shelly_entry))
+        entities.append(ShellyIpSensor(runtime, shelly_entry))
+        entities.append(ShellyWifiSensor(runtime, shelly_entry, "ssid"))
+        entities.append(ShellyWifiSensor(runtime, shelly_entry, "rssi"))
+    async_add_entities(entities)
 
 
 class _CountSensor(FleetEntity, SensorEntity):
@@ -106,3 +114,91 @@ class SecurityAuditSensor(FleetEntity, SensorEntity):
                 }
             )
         return {"devices": devices}
+
+
+class ShellyMacSensor(SensorEntity):
+    """MAC address of one core Shelly. Enabled so it shows on the device page."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = True
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "mac_address"
+
+    def __init__(self, runtime: FleetRuntime, shelly_entry) -> None:
+        self.runtime = runtime
+        self._entry = shelly_entry
+        self._attr_unique_id = f"{shelly_entry.entry_id}_mac_address"
+        self._attr_device_info = shelly_device_info(runtime.hass, shelly_entry)
+        try:
+            self._mac = display_mac(shelly_entry.unique_id or "")
+        except ValueError:
+            self._mac = str(shelly_entry.unique_id or "")
+
+    @property
+    def native_value(self) -> str:
+        return self._mac
+
+    async def async_added_to_hass(self) -> None:
+        self.runtime.publish_shelly_link(self._entry, str(self._entry.data.get(CONF_HOST) or ""))
+
+
+class ShellyIpSensor(SensorEntity):
+    """Live IP. Uses Shelly.GetStatus when the device answers, otherwise the core host."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = True
+    _attr_has_entity_name = True
+    _attr_should_poll = True
+    _attr_translation_key = "ip_address"
+    _attr_scan_interval = timedelta(seconds=60)
+
+    def __init__(self, runtime: FleetRuntime, shelly_entry) -> None:
+        self.runtime = runtime
+        self._entry = shelly_entry
+        self._attr_unique_id = f"{shelly_entry.entry_id}_ip_address"
+        self._attr_device_info = shelly_device_info(runtime.hass, shelly_entry)
+        self._ip = str(shelly_entry.data.get(CONF_HOST) or "")
+
+    @property
+    def native_value(self) -> str:
+        return self._ip
+
+    async def async_added_to_hass(self) -> None:
+        await self.async_update()
+
+    async def async_update(self) -> None:
+        info = await self.runtime.refresh_network(self._entry)
+        self._ip = str(info.get("ip") or "")
+
+
+class ShellyWifiSensor(SensorEntity):
+    """SSID or RSSI from the same status read as the IP sensor."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = True
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
+    def __init__(self, runtime: FleetRuntime, shelly_entry, key: str) -> None:
+        self.runtime = runtime
+        self._entry = shelly_entry
+        self._key = key
+        self._attr_unique_id = f"{shelly_entry.entry_id}_{key}"
+        self._attr_translation_key = "wifi_ssid" if key == "ssid" else "wifi_rssi"
+        self._attr_device_info = shelly_device_info(runtime.hass, shelly_entry)
+        self._value = None
+
+    @property
+    def native_value(self):
+        return self._value
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self.runtime.add_listener(self._pull))
+        self._pull()
+
+    def _pull(self) -> None:
+        cached = self.runtime._network.get(self._entry.entry_id) or {}
+        self._value = cached.get(self._key)
+        if self.hass is not None:
+            self.async_write_ha_state()
