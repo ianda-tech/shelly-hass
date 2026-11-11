@@ -64,6 +64,8 @@ Profiles are sent with Gen2+ RPC (`Sys.SetConfig`, `WiFi.SetConfig`, `Cloud.SetC
 2. Restart Home Assistant.
 3. Use **Add integration** above. The domain is `shelly_bulk`. Enter the site values on that instance. Nothing in this repository is pre-filled.
 
+HACS can offer a version only when this repository has a GitHub release. A push to `main` publishes a release named `v` plus the version in `custom_components/shelly_bulk/manifest.json`, when that tag does not already exist. The release notes are that version's section of `CHANGELOG.md`. The same workflow can be run by hand. HACS installs the files from the git tag.
+
 The same buttons work only when you are on your own Home Assistant and My Home Assistant can reach it.
 
 ## Install manually
@@ -468,7 +470,7 @@ pip install -r requirements_test.txt
 pytest
 ```
 
-GitHub Actions runs hassfest, HACS validation, and pytest. Tests use Home Assistant's config-flow harness and a fake RPC session. They do not talk to hardware. If you change an RPC field, cite the Shelly component doc you checked (`https://shelly-api-docs.shelly.cloud/gen2/`) and say when a model refused it.
+GitHub Actions runs hassfest, HACS validation, and pytest. Tests use Home Assistant's config-flow harness and a fake RPC session. They do not talk to hardware. If you change an RPC field, cite the Shelly component doc you checked (`https://shelly-api-docs.shelly.cloud/gen2/`) and say when a model refused it. Bump `manifest.json` and add a `CHANGELOG.md` section with the same version. The release workflow on `main` turns that section into the GitHub release HACS lists.
 
 Please don't add site defaults "to make the form easier". The config flow is supposed to be empty of SSID, password, and devices. Timezone may be suggested from the running Home Assistant instance. Examples such as `Australia/Melbourne` in the docs are format samples, not a default.
 

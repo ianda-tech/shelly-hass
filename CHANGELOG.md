@@ -6,6 +6,7 @@
 - Find my Shelly scans Bluetooth advertisements from every Home Assistant scanner and proxy, appends new MACs (blank name and room, model hint set), and posts a notification with MAC, model, signal, and which scanner heard the device.
 - Auto-adopt nearby new Shellies defaults to on in setup and on the hub switch. Factory-new devices with no login and an open setup window are adopted even when they are not on the list, then written to the CSV with a placeholder name. Only provision the allowlist overrides auto-adopt while it is on. A neighbour's factory-new Shelly in range can be adopted when that override is off.
 - Identify toggles the first output for about 2 seconds. It is disabled by default on relays, plugs, and unknown models.
+- A push to main publishes a GitHub release named `v` plus the manifest version, using this changelog section, when that tag does not already exist. HACS lists versions from those releases.
 
 ## 0.2.1
 
