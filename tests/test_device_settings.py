@@ -90,6 +90,22 @@ async def test_dimmer_form_includes_fade_and_night_mode() -> None:
     assert live.values["night_start"] == "22:00"
 
 
+async def test_power_on_change_while_follow_sends_both_fields() -> None:
+    from custom_components.shelly_bulk.advanced import write_setting
+
+    device = _relay()
+    read_back, note = await write_setting(device, "power_on_state", "off")
+    assert read_back == "off"
+    assert note is None or "detached" in note
+    payload = next(params for method, params in device.calls if method == "Switch.SetConfig")
+    assert payload["config"]["in_mode"] == "detached"
+    assert payload["config"]["initial_state"] == "off"
+    read_back, _note = await write_setting(device, "input_mode", "follow")
+    assert read_back == "follow"
+    payload = next(params for method, params in reversed(device.calls) if method == "Switch.SetConfig")
+    assert payload["config"] == {"in_mode": "follow", "initial_state": "match_input"}
+
+
 async def test_save_reads_back_and_reports_a_rejected_field() -> None:
     device = _relay()
     errors = await apply_live_settings(device, {"input_mode": "detached", "name": "Porch"})

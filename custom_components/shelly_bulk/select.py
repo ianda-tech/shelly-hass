@@ -10,14 +10,21 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .advanced import SELECT_SETTINGS
-from .const import BLE_SCANNER_MODES, DOMAIN, LIGHT_IN_MODES, SHELLY_DOMAIN, SWITCH_INITIAL_STATES
+from .const import (
+    BLE_SCANNER_MODES,
+    DOMAIN,
+    LIGHT_IN_MODES,
+    SHELLY_DOMAIN,
+    SWITCH_IN_MODES,
+)
+from .pairing import valid_initial_states
 from .entity import shelly_device_info
 from .runtime import FleetRuntime
 
 _OPTIONS = {
     "scanner_mode": list(BLE_SCANNER_MODES),
-    "input_mode": sorted(LIGHT_IN_MODES | {"momentary", "cycle"}),
-    "power_on_state": sorted(SWITCH_INITIAL_STATES | {"toggle"}),
+    "input_mode": sorted(SWITCH_IN_MODES),
+    "power_on_state": ["off", "on", "restore_last", "match_input"],
 }
 
 
@@ -54,6 +61,21 @@ class AdvancedSelect(SelectEntity):
         self._attr_device_info = shelly_device_info(runtime.hass, shelly_entry)
         self._available = True
         self._current: str | None = None
+        self._kind = "switch"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(self.runtime.add_listener(self._on_runtime))
+        await self._refresh()
+
+    def _on_runtime(self) -> None:
+        if self._key not in {"input_mode", "power_on_state"}:
+            return
+        self.hass.async_create_task(self._refresh_from_runtime())
+
+    async def _refresh_from_runtime(self) -> None:
+        await self._refresh()
+        self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
@@ -63,28 +85,38 @@ class AdvancedSelect(SelectEntity):
     def current_option(self) -> str | None:
         return self._current
 
-    async def async_added_to_hass(self) -> None:
-        await self.async_update()
-
     async def async_update(self) -> None:
         await self._refresh()
 
     async def _refresh(self) -> None:
         try:
-            value = await self.runtime.read_device_setting(self._shelly_entry, self._key)
+            if self._key in {"input_mode", "power_on_state"}:
+                kind, mode, initial = await self.runtime.read_output_pair(self._shelly_entry)
+                self._kind = kind or "switch"
+                if self._key == "power_on_state":
+                    self._attr_options = list(valid_initial_states(self._kind, mode))
+                    value = initial
+                else:
+                    modes = LIGHT_IN_MODES if self._kind != "switch" else SWITCH_IN_MODES
+                    self._attr_options = sorted(modes)
+                    value = mode
+            else:
+                value = await self.runtime.read_device_setting(self._shelly_entry, self._key)
         except Exception:  # noqa: BLE001
             self._available = False
             return
-        self._available = value in self._attr_options or value is None
         self._current = value if value in self._attr_options else None
-        if value is None:
-            self._available = False
+        self._available = self._current is not None
 
     async def async_select_option(self, option: str) -> None:
         try:
             read_back = await self.runtime.write_device_setting(self._shelly_entry, self._key, option)
         except Exception as err:  # noqa: BLE001
+            await self._refresh()
+            self.async_write_ha_state()
             raise HomeAssistantError(str(err)) from err
         self._current = str(read_back) if read_back in self._attr_options else None
         self._available = self._current is not None
+        if self._current is None:
+            await self._refresh()
         self.async_write_ha_state()

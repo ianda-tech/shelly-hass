@@ -47,6 +47,7 @@ from .const import (
     UNCHANGED,
 )
 from .models import AllowDevice, ChannelSettings, RpcCall, SecuritySettings, channel_from_dict
+from .pairing import InvalidDeviceValue, resolved_pair
 from .util import valid_hhmm
 
 
@@ -166,6 +167,24 @@ def _output_config(kind: str, settings: ChannelSettings, existing: dict[str, Any
             notes.append(
                 f"{label}: initial_state {settings.initial_state!r} is not valid for {kind}; skipped"
             )
+    if config.get("in_mode") or config.get("initial_state"):
+        try:
+            paired_mode, paired_initial, note = resolved_pair(
+                kind,
+                existing.get("in_mode"),
+                existing.get("initial_state"),
+                new_mode=config.get("in_mode"),
+                new_initial=config.get("initial_state"),
+            )
+        except InvalidDeviceValue as err:
+            notes.append(f"{label}: {err}")
+            config.pop("in_mode", None)
+            config.pop("initial_state", None)
+        else:
+            config["in_mode"] = paired_mode
+            config["initial_state"] = paired_initial
+            if note:
+                notes.append(f"{label}: {note}")
     if settings.auto_on is not None:
         config["auto_on"] = settings.auto_on
     if settings.auto_on_delay is not None:

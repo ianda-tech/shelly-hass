@@ -1075,6 +1075,24 @@ class FleetRuntime:
         finally:
             await session.shutdown()
 
+    async def read_output_pair(self, entry: ConfigEntry, channel: int = 0) -> tuple[str | None, str | None, str | None]:
+        """Return the output kind, in_mode, and initial_state currently on the device."""
+        from .advanced import _output_kind
+
+        session = await self._open_shelly(entry)
+        try:
+            config = dict(getattr(session, "config", {}) or {})
+            kind = _output_kind(config, channel)
+            if kind is None:
+                return None, None, None
+            namespace = {"switch": "Switch", "light": "Light", "rgb": "RGB", "rgbw": "RGBW", "cct": "CCT"}[kind]
+            current = await session.call(f"{namespace}.GetConfig", {"id": channel})
+            if not isinstance(current, dict):
+                return kind, None, None
+            return kind, current.get("in_mode"), current.get("initial_state")
+        finally:
+            await session.shutdown()
+
     async def write_device_setting(self, entry: ConfigEntry, key: str, value: Any, channel: int = 0) -> Any:
         if key == "scanner_mode":
             mode = str(value)
@@ -1092,6 +1110,8 @@ class FleetRuntime:
             await session.shutdown()
         if note:
             raise ServiceValidationError(note)
+        if key in {"input_mode", "power_on_state"}:
+            self.notify()
         return read_back
 
     async def _open_shelly(self, entry: ConfigEntry):

@@ -5,9 +5,13 @@ A missing component is reported as unsupported instead of failing the device.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from .const import BLE_SCANNER_MODES, DIMMER_COMPONENTS, OUTPUT_COMPONENTS
+from .pairing import InvalidDeviceValue, resolved_pair
+
+_LOGGER = logging.getLogger(__name__)
 
 _CHANNEL_READ = {
     "input_mode": "in_mode",
@@ -204,12 +208,10 @@ async def _write_channel(session: Any, config: dict[str, Any], key: str, value: 
     if kind is None:
         return None, f"No output on channel {channel}"
     namespace = {"switch": "Switch", "light": "Light", "rgb": "RGB", "rgbw": "RGBW", "cct": "CCT"}[kind]
+    if key in {"input_mode", "power_on_state"}:
+        return await _write_mode_and_power(session, namespace, kind, channel, key, value)
     payload: dict[str, Any] = {}
-    if key == "input_mode":
-        payload["in_mode"] = value
-    elif key == "power_on_state":
-        payload["initial_state"] = value
-    elif key == "auto_on":
+    if key == "auto_on":
         payload["auto_on"] = bool(value)
     elif key == "auto_off":
         payload["auto_off"] = bool(value)
@@ -239,6 +241,51 @@ async def _write_channel(session: Any, config: dict[str, Any], key: str, value: 
         "fade_rate": "button_fade_rate",
         "transition_duration": "transition_duration",
     }[key]
+    return read.get(field), None
+
+
+async def _write_mode_and_power(
+    session: Any,
+    namespace: str,
+    kind: str,
+    channel: int,
+    key: str,
+    value: Any,
+) -> tuple[Any, str | None]:
+    """Send in_mode and initial_state together so Shelly accepts the combination."""
+    current = await session.call(f"{namespace}.GetConfig", {"id": channel})
+    if not isinstance(current, dict):
+        return None, "read-back failed"
+    try:
+        if key == "input_mode":
+            mode, initial, note = resolved_pair(
+                kind,
+                current.get("in_mode"),
+                current.get("initial_state"),
+                new_mode=value,
+            )
+        else:
+            mode, initial, note = resolved_pair(
+                kind,
+                current.get("in_mode"),
+                current.get("initial_state"),
+                new_initial=value,
+            )
+    except InvalidDeviceValue as err:
+        return None, str(err)
+    await session.call(
+        f"{namespace}.SetConfig",
+        {"id": channel, "config": {"in_mode": mode, "initial_state": initial}},
+    )
+    read = await session.call(f"{namespace}.GetConfig", {"id": channel})
+    if not isinstance(read, dict):
+        return None, "read-back failed"
+    field = "in_mode" if key == "input_mode" else "initial_state"
+    expected = mode if key == "input_mode" else initial
+    if note:
+        _LOGGER.info("%s:%s %s", namespace, channel, note)
+    if read.get(field) != expected:
+        return None, note or "The device did not keep that input behaviour and power-on state."
     return read.get(field), None
 
 
