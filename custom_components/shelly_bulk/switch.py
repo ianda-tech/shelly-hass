@@ -105,7 +105,7 @@ class AdvancedSwitch(SwitchEntity):
     """One documented on/off setting for a single Shelly. Disabled until enabled."""
 
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_entity_registry_enabled_default = False
+    _attr_entity_registry_enabled_default = True
     _attr_should_poll = False
     _attr_has_entity_name = True
 

@@ -634,8 +634,14 @@ class FleetRuntime:
             kwargs["merge_connections"] = {(dr.CONNECTION_NETWORK_MAC, mac)}
         if ip:
             kwargs["configuration_url"] = f"http://{ip}"
-        if kwargs:
+        if not kwargs:
+            return
+        try:
             dev_reg.async_update_device(device.id, **kwargs)
+        except dr.DeviceConnectionCollisionError:
+            kwargs.pop("merge_connections", None)
+            if kwargs:
+                dev_reg.async_update_device(device.id, **kwargs)
 
     async def refresh_network(self, entry: ConfigEntry) -> dict[str, Any]:
         """Read the live Wi-Fi address. Falls back to the host stored by core Shelly."""
@@ -657,6 +663,9 @@ class FleetRuntime:
             pass
         self._network[entry.entry_id] = {"ip": ip, "ssid": ssid, "rssi": rssi}
         self.publish_shelly_link(entry, ip)
+        from .entity import update_companion_device
+
+        update_companion_device(self.hass, entry, ip=ip)
         self.notify()
         return self._network[entry.entry_id]
 

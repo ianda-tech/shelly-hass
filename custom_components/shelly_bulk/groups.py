@@ -102,6 +102,26 @@ def short_name(name_by_user: str, device_name: str, model: str, mac: str) -> tup
     return friendly, True
 
 
+def companion_device_name(name_by_user: str, device_name: str, model: str, mac: str, ip: str) -> str:
+    """Name a Shelly Bulk device after the Shelly it belongs to, plus its address.
+
+    A name the user set on the linked Shelly is kept. Otherwise the model and the
+    last four characters of the MAC are used. The factory hostname is not used.
+    """
+    ip_shown = ip or "no ip"
+    try:
+        mac_shown = display_mac(mac) if mac else ""
+    except ValueError:
+        mac_shown = mac
+    custom = (name_by_user or "").strip()
+    if custom:
+        return " · ".join(part for part in (custom, mac_shown, ip_shown) if part)
+    friendly = friendly_model(model)
+    tail = _last4(mac)
+    head = f"{friendly} · {tail}" if tail else friendly
+    return f"{head} · {ip_shown}"
+
+
 def device_label(name: str, room: str, mac: str, ip: str) -> str:
     shown_mac = ""
     if mac:

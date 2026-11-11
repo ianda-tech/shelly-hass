@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.6
+
+- Every Shelly Bulk control on a Shelly device is enabled: the advanced switches and selects, Identify, input behaviour, power-on state, auto-off delay, and the MAC and IP sensors. Identify still does nothing until it is pressed. On upgrade, controls this integration had disabled are turned back on. Controls you disabled stay off.
+- The Shelly Bulk device for each Shelly is named after that Shelly and its address, for example the Home Assistant name plus the MAC and IP, or the model plus the last four characters of the MAC and the IP. The hub title is not used. The name updates when the IP changes, unless you renamed that device yourself. New entity ids use that name. Existing entity ids are left as they are.
+
 ## 0.2.5
 
 - Configure → Bulk change settings picks devices by group: all, one model, one room (including no room), unnamed devices, or a short individual list. A confirmation says how many devices will change and lists each MAC and IP. Only ticked settings are sent, in the background, five at a time, with a timeout and a read-back. Progress is a notification and a report row per device.
