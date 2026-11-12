@@ -151,3 +151,40 @@ async def test_retry_failed_requeues_the_mac_for_the_next_advertisement(hass, mo
     await hass.services.async_call("button", "press", {"entity_id": button}, blocking=True)
     assert runtime.failed == 0
     assert runtime.results == []
+
+
+async def test_the_same_mac_is_not_counted_or_retried_twice(hass, monkeypatch) -> None:
+    async def _offline(*_args, **_kwargs):
+        raise OSError("offline")
+
+    monkeypatch.setattr(
+        "custom_components.shelly_bulk.runtime.FleetRuntime._connect_with_retries",
+        _offline,
+    )
+    entry = _entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    mac = "00000000000A"
+    runtime.allowlist.devices[mac] = AllowDevice(mac=mac)
+    runtime.record(mac, "failed", "Provisioning failed after the configured retries.")
+    runtime.record(mac, "failed", "Provisioning failed after the configured retries.")
+    assert runtime.failed == 1
+    assert len(runtime.failed_devices()) == 1
+    assert runtime.failed_devices()[0]["mac"] == "00:00:00:00:00:0A"
+    assert "retries" in runtime.failed_devices()[0]["reason"]
+    assert runtime.failed_devices()[0]["at"]
+
+    runtime.provisioner.active = True
+    hass.config_entries.flow.async_progress = lambda *args, **kwargs: [
+        {
+            "flow_id": "flow-again",
+            "handler": "shelly",
+            "step_id": "wifi_scan_failed",
+            "context": {"source": "bluetooth", "unique_id": "00:00:00:00:00:0A"},
+        }
+    ]
+    await runtime.provisioner.scan_once()
+    assert runtime.provisioner._inflight == set()
+    assert runtime.failed == 1

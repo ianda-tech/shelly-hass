@@ -112,6 +112,54 @@ def _ensure_hub(hass, bulk_entry) -> str:
     return created.id
 
 
+def _mac_from_entities(hass, entities_on_device) -> str | None:
+    """Read a MAC from the restored state of this device's MAC sensor."""
+    from .util import normalize_mac
+
+    for entity in entities_on_device:
+        unique_id = entity.unique_id or ""
+        if not unique_id.endswith("_mac_address"):
+            continue
+        state = hass.states.get(entity.entity_id)
+        if state is None or state.state in {"", "unknown", "unavailable"}:
+            continue
+        try:
+            return normalize_mac(state.state)
+        except ValueError:
+            continue
+    return None
+
+
+def _shelly_for_mac(shelly_entries: dict, mac: str | None):
+    if not mac:
+        return None
+    from .util import normalize_mac
+
+    for entry in shelly_entries.values():
+        if not entry.unique_id:
+            continue
+        try:
+            if normalize_mac(str(entry.unique_id)) == mac:
+                return entry
+        except ValueError:
+            continue
+    return None
+
+
+def _move_entity(entities, entity, owner, hass, bulk_entry, shelly_entries) -> bool:
+    try:
+        if owner is None:
+            target = _ensure_hub(hass, bulk_entry)
+        else:
+            target = _ensure_companion(hass, bulk_entry, shelly_entries[owner])
+        if entity.device_id != target:
+            entities.async_update_entity(entity.entity_id, device_id=target)
+    except Exception:
+        _LOGGER.exception("Could not move %s off stale device", entity.entity_id)
+        return False
+    return True
+
+
 def retire_stale_devices(hass, bulk_entry) -> None:
     """Move entities onto the current companion device and drop leftover devices.
 
@@ -156,28 +204,36 @@ def retire_stale_devices(hass, bulk_entry) -> None:
             if entity.config_entry_id == bulk_entry.entry_id
         ]
         blocked = False
+        unmatched = []
         for entity in ours:
             owner = _shelly_id_for_entity(entity.unique_id or "", shelly_ids, bulk_entry.entry_id)
             if owner == "":
                 owner = device_owner or ""
             if owner == "":
-                _LOGGER.warning(
-                    "Left %s on stale device %s; its Shelly could not be matched",
-                    entity.entity_id,
-                    sorted(device.identifiers),
-                )
-                blocked = True
+                unmatched.append(entity)
                 continue
-            try:
-                if owner is None:
-                    target = _ensure_hub(hass, bulk_entry)
-                else:
-                    target = _ensure_companion(hass, bulk_entry, shelly_entries[owner])
-                if entity.device_id != target:
-                    entities.async_update_entity(entity.entity_id, device_id=target)
-            except Exception:
-                _LOGGER.exception("Could not move %s off stale device %s", entity.entity_id, device.id)
+            if not _move_entity(entities, entity, owner, hass, bulk_entry, shelly_entries):
                 blocked = True
+        if unmatched and not blocked:
+            linked = _shelly_for_mac(shelly_entries, _mac_from_entities(hass, unmatched))
+            if linked is not None:
+                target_owner = linked.entry_id
+                for entity in unmatched:
+                    if not _move_entity(entities, entity, target_owner, hass, bulk_entry, shelly_entries):
+                        blocked = True
+            else:
+                shown = sorted(device.identifiers)
+                for entity in unmatched:
+                    _LOGGER.warning(
+                        "Removing %s from orphan device %s; no core Shelly entry matches it",
+                        entity.entity_id,
+                        shown,
+                    )
+                    entities.async_remove(entity.entity_id)
+                _LOGGER.warning(
+                    "Removing orphan Shelly Installer device %s. Its Shelly entry is gone and it has no MAC to re-link.",
+                    shown,
+                )
         if blocked:
             continue
         # A device belongs to one config entry. This list is the devices this

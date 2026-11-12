@@ -29,6 +29,7 @@ async def async_get_config_entry_diagnostics(
         "options": dict(entry.options),
         "adopted": runtime.adopted,
         "failed": runtime.failed,
+        "failures": runtime.failed_devices(),
         "pending": runtime.pending,
         "last_error": runtime.redact(runtime.last_error),
         "allowlist_count": len(runtime.allowlist.devices),

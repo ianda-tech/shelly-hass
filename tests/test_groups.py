@@ -128,7 +128,7 @@ async def test_reenable_runs_once_during_migration(hass, monkeypatch) -> None:
     )
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.minor_version == 3
+    assert entry.minor_version == 4
     assert entry.state is ConfigEntryState.LOADED
     assert registry.async_get(integration.entity_id).disabled_by is None
     assert registry.async_get(user.entity_id).disabled_by is RegistryEntryDisabler.USER

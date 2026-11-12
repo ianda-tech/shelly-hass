@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3
+
+- The failed count is one entry per MAC. A later attempt updates the reason and the time instead of adding another failure. Those MACs are remembered across restarts and are not provisioned again until Retry failed. The failed sensor lists each MAC, why it failed, and when it was last tried. A device that stops advertising is not retried.
+- Upgrade removes an installer device whose Shelly entry is gone. If its MAC sensor still matches a Shelly that is installed, the controls move to that Shelly. Otherwise the orphan device and its controls are removed.
+
 ## 0.3.2
 
 - Setup no longer waits for each Shelly to answer. Switch, number, select, and sensor controls start unavailable and share one read per device. That read runs in the background, at most a few devices at a time, and an offline device cannot hold the others or startup. Settings refresh about once a minute.

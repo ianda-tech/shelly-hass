@@ -80,15 +80,15 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate a config entry before setup. Each step runs once."""
     if entry.version > 1:
         return False
-    if entry.minor_version >= 3:
+    if entry.minor_version >= 4:
         return True
     if entry.minor_version < 2:
         _reenable_integration_disabled(hass, entry)
-    if entry.minor_version < 3:
+    if entry.minor_version < 4:
         from .entity import retire_stale_devices
 
         retire_stale_devices(hass, entry)
-    hass.config_entries.async_update_entry(entry, minor_version=3)
+    hass.config_entries.async_update_entry(entry, minor_version=4)
     return True
 
 
