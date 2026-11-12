@@ -10,13 +10,15 @@ from pytest_homeassistant.common import MockConfigEntry
 from custom_components.shelly_bulk.const import ALLTERCO_MFID, DOMAIN
 from custom_components.shelly_bulk.entity import device_by_identifier, shelly_device_info
 from custom_components.shelly_bulk.models import AllowDevice
+from custom_components.shelly_bulk.runtime import _failed_key
 
 from test_integration import _entry
 
 
-def _advert(flags: int) -> dict[int, bytes]:
-    # MAC bytes are reversed. 6,5,4,3,2,1 is 01:02:03:04:05:06.
-    return {ALLTERCO_MFID: bytes([0x01, flags & 0xFF, (flags >> 8) & 0xFF, 0x0A, 6, 5, 4, 3, 2, 1])}
+def _advert(flags: int, mac: str = "010203040506") -> dict[int, bytes]:
+    # MAC bytes are stored reversed. 6,5,4,3,2,1 is 01:02:03:04:05:06.
+    raw = bytes.fromhex(mac)
+    return {ALLTERCO_MFID: bytes([0x01, flags & 0xFF, (flags >> 8) & 0xFF, 0x0A]) + raw[::-1]}
 
 
 async def test_entities_add_when_the_core_device_owns_the_mac(hass, monkeypatch) -> None:
@@ -82,13 +84,15 @@ async def test_power_cycle_is_suggested_only_without_ble_rpc(hass, monkeypatch) 
     assert "power-cycle" not in runtime.results[-1]["error"].lower()
 
     runtime.provisioner.note_advertisement(_advert(0x0004), "with-rpc")
-    runtime.record("010203040506", "failed", "Could not connect.")
-    assert "power-cycle" not in runtime.results[-1]["error"].lower()
+    runtime.record("AABBCCDDEE01", "failed", "Could not connect.")
+    plain = next(item for item in runtime.failed_devices() if item["mac"] == "AA:BB:CC:DD:EE:01")
+    assert "power-cycle" not in plain["reason"].lower()
 
     runtime.provisioner.note_advertisement(_advert(0x0001), "no-rpc")
     runtime.record("010203040506", "failed", "Could not connect.")
-    assert "Power-cycle" in runtime.results[-1]["error"]
-    assert "without Bluetooth RPC" in runtime.results[-1]["error"]
+    failed = next(item for item in runtime.failed_devices() if item["mac"] == "01:02:03:04:05:06")
+    assert "Power-cycle" in failed["reason"]
+    assert "without Bluetooth RPC" in failed["reason"]
 
 
 async def test_retry_failed_requeues_the_mac_for_the_next_advertisement(hass, monkeypatch) -> None:
@@ -188,3 +192,45 @@ async def test_the_same_mac_is_not_counted_or_retried_twice(hass, monkeypatch) -
     await runtime.provisioner.scan_once()
     assert runtime.provisioner._inflight == set()
     assert runtime.failed == 1
+
+
+async def test_boot_adverts_do_not_touch_a_failed_mac(hass, monkeypatch) -> None:
+    async def _offline(*_args, **_kwargs):
+        raise OSError("offline")
+
+    monkeypatch.setattr(
+        "custom_components.shelly_bulk.runtime.FleetRuntime._connect_with_retries",
+        _offline,
+    )
+    entry = _entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    runtime = hass.data[DOMAIN][entry.entry_id]
+    mac = "48F6EEB7CADC"
+    runtime.record(mac, "failed", "Provisioning failed after the configured retries.")
+    stamp = runtime.failures[_failed_key(mac)]["at"]
+    reason = runtime.failures[_failed_key(mac)]["reason"]
+    configured: list[str] = []
+
+    async def _configure(flow_id, user_input=None):
+        configured.append(flow_id)
+        return {"type": "form", "step_id": "wifi_scan_failed", "flow_id": flow_id}
+
+    runtime.provisioner.active = True
+    hass.config_entries.flow.async_configure = _configure
+    hass.config_entries.flow.async_progress = lambda *args, **kwargs: [
+        {
+            "flow_id": "flow-boot",
+            "handler": "shelly",
+            "step_id": "bluetooth_confirm",
+            "context": {"source": "bluetooth", "unique_id": "48:F6:EE:B7:CA:DC"},
+        }
+    ]
+    runtime.provisioner.note_advertisement(_advert(0x0005, "48F6EEB7CADC"), "boot")
+    await runtime.provisioner.scan_once()
+    await runtime.provisioner.drive("flow-boot", "48:F6:EE:B7:CA:DC")
+    runtime.record(mac, "failed", "Provisioning failed after the configured retries.")
+    assert configured == []
+    assert runtime.failures[_failed_key(mac)]["at"] == stamp
+    assert runtime.failures[_failed_key(mac)]["reason"] == reason

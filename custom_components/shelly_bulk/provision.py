@@ -208,7 +208,7 @@ class Provisioner:
                 mac = normalize_mac(str(unique_id))
             except ValueError:
                 continue
-            if mac in self._done or mac in self._inflight:
+            if self.runtime.is_failed_mac(mac) or mac in self._done or mac in self._inflight:
                 continue
             if mac in self._auth_macs:
                 self._done.add(mac)
@@ -240,6 +240,8 @@ class Provisioner:
 
     async def drive(self, flow_id: str, mac: str) -> None:
         """Answer one Shelly Bluetooth flow, then hand the new entry to the runtime."""
+        if self.runtime.is_failed_mac(mac):
+            return
         retries = int(self.runtime.entry.options.get(CONF_RETRIES, 1) or 0)
         attempts = 0
         max_attempts = retries + 1
@@ -440,6 +442,8 @@ class Provisioner:
         except ValueError:
             return
         flags = int(parsed.get("flags") or 0)
+        if self.runtime.is_failed_mac(mac):
+            return
         if auth_enabled(flags):
             self._auth_macs.add(mac)
         self._hints[mac] = model_hint_from(parsed.get("model_id"), local_name)
