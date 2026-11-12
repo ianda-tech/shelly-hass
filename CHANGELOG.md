@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.4
+
+- Brand icon and logo use the official Shelly images from the Home Assistant brands repository.
+
 ## 0.3.3
 
 - The failed count is one entry per MAC. A later attempt updates the reason and the time instead of adding another failure. Those MACs are remembered across restarts and are not provisioned again until Retry failed. The failed sensor lists each MAC, why it failed, and when it was last tried. A device that stops advertising is not retried.
