@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.5
+
+- Every startup removes a duplicate installer device when another companion already belongs to the same Shelly MAC. The linked companion keeps its entity ids. A name, icon, or disabled switch set on the duplicate is copied onto that linked entity. Each removal is logged.
+- A Shelly that has already failed is ignored on startup and when it advertises. Nothing is attempted, and the last attempt time stays as it was, until Retry failed.
+
 ## 0.3.4
 
 - Brand icon and logo use the official Shelly images from the Home Assistant brands repository.

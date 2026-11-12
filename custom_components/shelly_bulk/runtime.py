@@ -238,6 +238,9 @@ class FleetRuntime:
             row["host"] = row["ip"]
         if status == "failed" and count and _is_mac(mac):
             key = _failed_key(mac)
+            if key in self.failures:
+                _LOGGER.debug("Ignored a repeat failure for %s", row["mac"])
+                return
             self.failures[key] = {
                 "mac": row["mac"],
                 "reason": safe_error,
@@ -273,6 +276,13 @@ class FleetRuntime:
         self.notify()
         self._store.async_delay_save(self._store_data, 1)
         _LOGGER.info("Shelly %s: %s %s", row["mac"], status, safe_error)
+
+    def is_failed_mac(self, mac: str) -> bool:
+        """True when this MAC already failed and Retry failed has not cleared it."""
+        try:
+            return _failed_key(mac) in self.failures
+        except ValueError:
+            return False
 
     def failed_devices(self) -> list[dict[str, str]]:
         """Unique failed MACs, newest attempt last."""

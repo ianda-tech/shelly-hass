@@ -112,6 +112,126 @@ def _ensure_hub(hass, bulk_entry) -> str:
     return created.id
 
 
+def _companion_ident(device) -> str:
+    for domain, ident in device.identifiers:
+        if domain == DOMAIN and str(ident).startswith("companion_"):
+            return str(ident)
+    return ""
+
+
+def _device_macs(device) -> set[str]:
+    from .util import normalize_mac
+
+    found: set[str] = set()
+    for domain, value in device.connections:
+        if domain != dr.CONNECTION_NETWORK_MAC:
+            continue
+        try:
+            found.add(normalize_mac(value))
+        except ValueError:
+            continue
+    return found
+
+
+def _mac_index(registry, shelly_entries: dict) -> dict[str, object]:
+    """Map a MAC to the core Shelly config entry that owns it."""
+    from .util import normalize_mac
+
+    index: dict[str, object] = {}
+    for entry in shelly_entries.values():
+        if entry.unique_id:
+            try:
+                index.setdefault(normalize_mac(str(entry.unique_id)), entry)
+            except ValueError:
+                pass
+        for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+            for mac in _device_macs(device):
+                index.setdefault(mac, entry)
+    return index
+
+
+def _macs_for_companion(hass, registry, device, ours) -> set[str]:
+    macs = _device_macs(device)
+    sensor_mac = _mac_from_entities(hass, ours)
+    if sensor_mac:
+        macs.add(sensor_mac)
+    if device.via_device_id:
+        parent = registry.async_get(device.via_device_id)
+        if parent is not None:
+            macs.update(_device_macs(parent))
+    return macs
+
+
+def _entity_suffix(unique_id: str, owner_id: str) -> str:
+    prefix = f"{owner_id}_"
+    if unique_id.startswith(prefix):
+        return unique_id[len(prefix) :]
+    return ""
+
+
+def _copy_orphan_customisation(entities, orphan_entity, linked_entity) -> None:
+    """Copy a name, icon, or user disable onto the linked entity.
+
+    The linked entity keeps its entity id. A customisation it already has wins.
+    """
+    from homeassistant.helpers.entity_registry import RegistryEntryDisabler
+
+    updates: dict = {}
+    if orphan_entity.name and not linked_entity.name:
+        updates["name"] = orphan_entity.name
+    if orphan_entity.icon and not linked_entity.icon:
+        updates["icon"] = orphan_entity.icon
+    if (
+        orphan_entity.disabled_by == RegistryEntryDisabler.USER
+        and linked_entity.disabled_by != RegistryEntryDisabler.USER
+    ):
+        updates["disabled_by"] = RegistryEntryDisabler.USER
+    if not updates:
+        return
+    entities.async_update_entity(linked_entity.entity_id, **updates)
+    _LOGGER.info(
+        "Kept customisation from %s on %s without changing its entity id",
+        orphan_entity.entity_id,
+        linked_entity.entity_id,
+    )
+
+
+def _drop_duplicate_companion(registry, entities, device, sibling, ours, orphan_owner: str, live_owner: str, mac: str) -> None:
+    linked_by_suffix = {}
+    for entity in er_entries_for_device(entities, sibling.id):
+        suffix = _entity_suffix(entity.unique_id or "", live_owner)
+        if suffix:
+            linked_by_suffix[suffix] = entity
+    shown = sorted(device.identifiers)
+    for entity in ours:
+        suffix = _entity_suffix(entity.unique_id or "", orphan_owner)
+        linked = linked_by_suffix.get(suffix) if suffix else None
+        if linked is not None:
+            _copy_orphan_customisation(entities, entity, linked)
+        _LOGGER.info(
+            "Removing duplicate entity %s from orphan device %s",
+            entity.entity_id,
+            shown,
+        )
+        entities.async_remove(entity.entity_id)
+    _LOGGER.info(
+        "Removing duplicate Shelly Installer device %s for %s; %s is the linked companion",
+        shown,
+        mac,
+        sorted(sibling.identifiers),
+    )
+    registry.async_remove_device(device.id)
+
+
+def er_entries_for_device(entities, device_id: str):
+    from homeassistant.helpers import entity_registry as er
+
+    return [
+        entity
+        for entity in er.async_entries_for_device(entities, device_id, include_disabled_entities=True)
+    ]
+
+
 def _mac_from_entities(hass, entities_on_device) -> str | None:
     """Read a MAC from the restored state of this device's MAC sensor."""
     from .util import normalize_mac
@@ -178,6 +298,7 @@ def retire_stale_devices(hass, bulk_entry) -> None:
         entry.entry_id: entry for entry in hass.config_entries.async_entries(SHELLY_DOMAIN)
     }
     shelly_ids = set(shelly_entries)
+    mac_index = _mac_index(registry, shelly_entries)
     by_key = {}
     for entry in shelly_entries.values():
         by_key[entry.entry_id] = entry.entry_id
@@ -193,16 +314,36 @@ def retire_stale_devices(hass, bulk_entry) -> None:
                     new_connections=set(device.connections) - macs,
                 )
             continue
+        ident = _companion_ident(device)
+        orphan_owner = ident.removeprefix("companion_") if ident else ""
+        ours = [
+            entity
+            for entity in er_entries_for_device(entities, device.id)
+            if entity.config_entry_id == bulk_entry.entry_id
+        ]
+        macs = _macs_for_companion(hass, registry, device, ours)
+        live = next((mac_index.get(mac) for mac in macs if mac in mac_index), None)
+        if live is not None and ident and ident != f"companion_{live.entry_id}":
+            sibling = device_by_identifier(
+                registry, (DOMAIN, f"companion_{live.entry_id}"), bulk_entry.entry_id
+            )
+            if sibling is not None and sibling.id != device.id:
+                _drop_duplicate_companion(
+                    registry,
+                    entities,
+                    device,
+                    sibling,
+                    ours,
+                    orphan_owner,
+                    live.entry_id,
+                    next(iter(macs), ""),
+                )
+                continue
         device_owner = ""
         for domain, value in device.identifiers:
             if domain == SHELLY_DOMAIN and value in by_key:
                 device_owner = by_key[value]
                 break
-        ours = [
-            entity
-            for entity in er.async_entries_for_device(entities, device.id, include_disabled_entities=True)
-            if entity.config_entry_id == bulk_entry.entry_id
-        ]
         blocked = False
         unmatched = []
         for entity in ours:
@@ -224,13 +365,13 @@ def retire_stale_devices(hass, bulk_entry) -> None:
             else:
                 shown = sorted(device.identifiers)
                 for entity in unmatched:
-                    _LOGGER.warning(
+                    _LOGGER.info(
                         "Removing %s from orphan device %s; no core Shelly entry matches it",
                         entity.entity_id,
                         shown,
                     )
                     entities.async_remove(entity.entity_id)
-                _LOGGER.warning(
+                _LOGGER.info(
                     "Removing orphan Shelly Installer device %s. Its Shelly entry is gone and it has no MAC to re-link.",
                     shown,
                 )

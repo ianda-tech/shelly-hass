@@ -113,8 +113,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: CONFIG_ENTRY) -> bool:
     entry.runtime_data = runtime
     # Register companions before entities. Entity DeviceInfo must not carry
     # via_device, or Home Assistant 2026.11 refuses to add the entity.
-    from .entity import ensure_companion_devices
+    from .entity import ensure_companion_devices, retire_stale_devices
 
+    # Every setup, not only the one-shot migration. Duplicate companions are
+    # removed here, before new entities are added.
+    retire_stale_devices(hass, entry)
     ensure_companion_devices(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # Device reads start after the entities exist and are not awaited.

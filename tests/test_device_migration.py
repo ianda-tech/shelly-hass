@@ -177,3 +177,83 @@ async def test_orphan_companion_without_a_mac_is_removed(hass) -> None:
     assert devices.async_get(orphan.id) is None
     assert entities.async_get(mac_entity.entity_id) is None
     assert await async_remove_config_entry_device(hass, bulk, orphan) is True
+
+
+async def test_duplicate_companion_for_the_same_mac_is_removed_on_setup(hass, monkeypatch, caplog) -> None:
+    async def _offline(*_args, **_kwargs):
+        raise OSError("offline")
+
+    monkeypatch.setattr(
+        "custom_components.shelly_bulk.runtime.FleetRuntime._connect_with_retries",
+        _offline,
+    )
+    bulk = _entry()
+    bulk.add_to_hass(hass)
+    hass.config_entries.async_update_entry(bulk, minor_version=4)
+    live_id = "01M76K99B9R9WY84CK9NP95F84"
+    old_id = "01M74D6D0ERMHSMQHENRHR1ZF8"
+    shelly = MockConfigEntry(
+        domain="shelly",
+        unique_id="48F6EEB7F8B8",
+        title="shellymini1pmg3-48f6eeb7f8b8",
+        data={CONF_HOST: "192.0.2.20", CONF_PORT: 80, "model": "S3SW-001P8EU"},
+        entry_id=live_id,
+    )
+    shelly.add_to_hass(hass)
+    devices = dr.async_get(hass)
+    core = devices.async_get_or_create(
+        config_entry_id=shelly.entry_id,
+        identifiers={("shelly", "48F6EEB7F8B8")},
+        connections={(dr.CONNECTION_NETWORK_MAC, "48:f6:ee:b7:f8:b8")},
+        name="shellymini1pmg3-48f6eeb7f8b8",
+    )
+    linked = devices.async_get_or_create(
+        config_entry_id=bulk.entry_id,
+        identifiers={(DOMAIN, f"companion_{live_id}")},
+        via_device_id=core.id,
+        name="1PM Mini Gen3 · F8B8 · 192.0.2.20",
+    )
+    orphan = devices.async_get_or_create(
+        config_entry_id=bulk.entry_id,
+        identifiers={(DOMAIN, f"companion_{old_id}")},
+        connections={(dr.CONNECTION_NETWORK_MAC, "48:f6:ee:b7:f8:b8")},
+        name="Cheviot",
+    )
+    registry = er.async_get(hass)
+    linked_entity = registry.async_get_or_create(
+        "select",
+        DOMAIN,
+        f"{live_id}_power_on_state",
+        config_entry=bulk,
+        device_id=linked.id,
+    )
+    linked_entity_id = linked_entity.entity_id
+    orphan_entity = registry.async_get_or_create(
+        "select",
+        DOMAIN,
+        f"{old_id}_power_on_state",
+        config_entry=bulk,
+        device_id=orphan.id,
+    )
+    registry.async_update_entity(orphan_entity.entity_id, name="Porch light")
+    import logging
+
+    caplog.set_level(logging.INFO)
+    assert await hass.config_entries.async_setup(bulk.entry_id)
+    await hass.async_block_till_done()
+    assert devices.async_get(orphan.id) is None
+    assert registry.async_get(orphan_entity.entity_id) is None
+    kept = registry.async_get(linked_entity_id)
+    assert kept is not None
+    assert kept.entity_id == linked_entity_id
+    assert kept.device_id == linked.id
+    assert kept.name == "Porch light"
+    assert devices.async_get(linked.id) is not None
+    assert "Removing duplicate Shelly Installer device" in caplog.text
+    assert await hass.config_entries.async_unload(bulk.entry_id)
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_setup(bulk.entry_id)
+    await hass.async_block_till_done()
+    assert devices.async_get(linked.id) is not None
+    assert registry.async_get(linked_entity_id).entity_id == linked_entity_id
+    assert registry.async_get(linked_entity_id).name == "Porch light"
